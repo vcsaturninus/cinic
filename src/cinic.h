@@ -72,3 +72,7 @@ const char *Cinic_err2str(
 		);
 
 #endif
+
+
+
+void Cinic_init(int allow_globals);

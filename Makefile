@@ -3,6 +3,8 @@ ifdef DEBUG_MODE
  CFLAGS += -g
 endif
 
+CFLAGS+= -g
+
 CPPFLAGS += -Isrc -Ilua
 #CPPFLAGS += -D_POSIX_C_SOURCE=200112L
 CPPFLAGS += -D_POSIX_C_SOURCE=200809L   # getline()

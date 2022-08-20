@@ -3,13 +3,24 @@
 #include <stdbool.h>
 #include <sys/types.h>  /* ssize_t */
 #include <ctype.h>      /* ASCII char type functions */
+#include <inttypes.h>   /* PRIu32 etc */
 
 #include "cinic.h"
 
 
 #define UNUSED(x) do{ (void)x; } while(0)
 
-/* map of cinic error number to error string;
+//#define DEBUG_MODE
+#ifdef DEBUG_MODE
+#   define say(...) fprintf(stderr, __VA_ARGS__);
+#else 
+#   define say(...) 
+#endif
+
+static int ALLOW_GLOBAL_RECORDS=0;
+
+/* 
+ * Map of cinic error number to error string;
  * The last entry is a sentinel marking the greatest
  * index in the array. This makes it possible to catch
  * attempts to index out of bounds (see Cinic_err2str()). */
@@ -23,17 +34,31 @@ const char *cinic_error_strings[] = {
 };
 
 const char *Cinic_err2str(unsigned int errnum){
-	if (errnum > CINIC_SENTINEL){
+	if (errnum > CINIC_SENTINEL){  /* guard against out-of-bounds indexing attempt */
 		fprintf(stderr, "Invalid cinic error number: '%d'\n", errnum);
 		exit(EXIT_FAILURE);
 	}
 	return cinic_error_strings[errnum];
 }
 
-static inline char *strip_ws(char *s){
+/*
+ * Strip leading whitespace from s */
+static inline char *strip_lws(char *s){
     assert(s);
     while (*s && isspace(*s)) ++s;
     return s;
+}
+
+/*
+ * Strip trailing whitespace from s */
+static inline char *strip_tws(char *s){
+    assert(s);
+    char *end = s+ (strlen(s) - 1); /* char before NUL */
+    //printf("end = %c\n", *end);
+    while (*end != *s && isspace(*end)) --end;
+    *(end+1) = '\0';
+
+    return end;
 }
 
 /* 
@@ -46,15 +71,20 @@ bool is_comment(unsigned char c){
 }
 
 /*
- * Return true if c is a valid/acceptable char, else false.
+ * Return true if c is a valid/acceptable/allowed char, else false.
  *
  * An acceptable char is one that can appear in a section title,
- * i.e it is part of the regex charset [a-zA-Z0-9-_.] */
+ * i.e it is part of the regex charset [a-zA-Z0-9-_.@] */
 static inline bool is_allowed(unsigned char c){
     if (c == '.' ||
         c == '-' ||
         c == '_' ||
         c == '@' ||
+        c == '/' ||
+        c == '*' ||
+        c == '?' ||
+        c == '%' ||
+        c == '&' ||
         isalnum(c)
         )
     {
@@ -82,6 +112,28 @@ uint32_t char_occurs(char c, char *s, bool through_comments){
 	return count;
 }
 
+/*
+ * True if line consists of just whitespace, else false */
+bool is_empty_line(char *line){
+	assert(line);
+    line = strip_lws(line);
+	return (*line == '\0');
+}
+
+/* 
+ * True if line consists of just whitespace and a comment, else false;
+ *
+ * Acceptable comment symbols are '#' and ';'. Inline comments are 
+ * possible. Everything following a comment symbol and until the end
+ * of the line is considered to be a comment, and the comment symbol
+ * can freely be part of an already-started comment without being escaped.
+ */
+bool is_comment_line(char *line){
+	assert(line);
+    line = strip_lws(line);
+    /* if line has ended or the current char is not a comment symbol */
+	return ( *line && is_comment(*line) );
+}
 
 /*
  * Wrapper around getline()
@@ -98,143 +150,160 @@ uint32_t read_line(FILE *f, char **buff, size_t *buffsz){
 	assert(f && buff && buffsz);
 	ssize_t rc = getline(buff, buffsz, f);
 	if (rc < 0 /* -1 */){
-		perror("Failed to read line (getline())");
-		exit(EXIT_FAILURE);
+        if (!feof(f)){
+            perror("Failed to read line (getline())");
+            exit(EXIT_FAILURE);
+        }else rc = 0;
 	}
 	return rc;
 }
 
-/* Return true if line is a .ini section, else False.
+void cp_to_buff(char dst[], char *src, size_t buffsz, size_t null_at){
+    assert(dst && src);
+    memset(dst, 0, buffsz);
+    strncpy(dst, src, buffsz-1);
+    if (buffsz < null_at){
+        dst[buffsz-1] = '\0';
+    }else{
+        dst[null_at] = '\0';
+    }
+}
+
+/* 
+ * Return true if line is a .ini section title, else False.
  *
- * A section line is expected to have the following format:
- * <whitespace> [section.subsection.subsubsection]<whitespace>
+ * IFF line IS an .ini section title, and if name is NOT NULL,
+ * the string IS MODIFIED such that it's NUL terminated where the 
+ * section name ends, and name is made to point to the section
+ * title string.
+ *
+ * A section title line is expected to have the following format:
+ *  [section.subsection.subsubsection]
+ * Whitespace can come before and after each bracket and inline comments
+ * are allowed last on the line.
  */
-bool is_section(char *line, char **name){
+bool is_section(char *line, char name[], size_t buffsz){
 	assert(line);
-	assert(name);
+    char *end=NULL, *sectname=NULL;
+    say(" ~~ parsing '%s'\n", line);
 
-    printf("here1: %s, [0]=%c\n", line, *line);
-
-	/* strip leading whitespace, if any */
-	while (*line && isspace(*line)) ++line;
-
-    printf("here2: %s, [0]=%c\n", line, *line);
+	/* strip leading and trailing whitespace, if any */
+    line = strip_lws(line);
+    strip_tws(line);
 
 	/* first non-whitespace char must be '[' */
-	if (! *line || *line != '[') return false;
-    ++line;
-    printf("here3: %s, [0]=%c\n", line, *line);
+	if (! *line || *line++ != '[') return false;
 	
-	/* section NAME (text between [ ]) must be alphanumeric */
-	while (*line && isspace(*line)) ++line;  // leading whitespace is allowed though
-    printf("here4: %s, [0]=%c\n", line, *line);
-	if (! *line || !is_allowed(*line)) return false;
-    *name = line; /* start of section name */
-	while (*line && is_allowed(*line)) ++line;  // go to end of section name
-    printf("here5: %s, [0]=%c\n", line, *line);
-    if (! *line || (!isspace(*line) && *line != ']')) return false;
-    if (isspace(*line)) *line++ = '\0';
+	/* section NAME (text between [ ]) must be in the allowable set */
+	line = strip_lws(line);  /* ws between opening bracket and title is allowed */
+	if (! *line || !is_allowed(*line)){
+        return false;
+    }else{
+        sectname = line; /* start of section name */
+    }
 
-    printf("here5.5: %s, [0]=%c\n", line, *line);
-	while (*line && isspace(*line)) ++line;  // ditto for trailing whitespace
-    printf("here6: %s, [0]=%c\n", line, *line);
-	if (! *line || *line != ']') return false;
-    *line++ = '\0';
-    printf("here7: %s, [0]=%c\n", line, *line);
+    /*  go to end of section name; first char after section name must be
+     *  either whitespace or the closing bracket */
+	while (*line && is_allowed(*line)) ++line;  
+    if (! *line || ( !isspace(*line) && *line != ']' ) ){
+        return false;
+    }else{
+        end = line;  /* section title end: NUL terminate here */
+    }
 
-	/* there must be NO other text (other than whitespace or a comment)
-	 * after closing bracket */
-	while (*line && isspace(*line)) ++line;
-    printf("here8: %s, [0]=%c\n", line, *line);
-	if (*line && !is_comment(*line)) return false;  // must be a comment symbol
-	
-    printf("here9: %s, [0]=%c\n", line, *line);
-	return true;
-}
+	line = strip_lws(line); /* ws between title and closing bracket is allowed */
+	if (! *line || *line++ != ']') return false;
 
-/* True if line consists of just whitespace, else false */
-bool is_empty_line(char *line){
-	assert(line);
-    line = strip_ws(line);
-	if (*line == '\0') return true;
-	return false;
-}
+	/* only whitespace or a comment is allowed after closing bracket */
+    line = strip_lws(line);
+	if (*line && !is_comment(*line)) return false; /* must be a comment symbol */
 
-/* True if line consists of just whitespace and a comment, else false;
- *
- * Acceptable comment symbols are '#' and ';'. Inline comments are 
- * possible. Everything following a comment symbol and until the end
- * of the line is considered to be a comment, and ; or # can freely
- * be part of an already-started comment without being escaped.
- */
-bool is_comment_line(char *line){
-	assert(line);
-    line = strip_ws(line);
-    /* if line has ended or the current char is not a comment symbol */
-	if (! *line || !is_comment(*line) ){
-		return false;
-	}
+    /* is name != NULL, user wants to mangle the string and extract section name */
+    if (name){
+        cp_to_buff(name, sectname, buffsz, end-sectname);
+    }
 	return true;
 }
 
 /* 
  * true if the line is a key=value entry, else false.
  *
- * the '=' sign must NOT be part of the key and it must 
- * FIRST appear as a separator between key and value. 
- * subsequent occurences are then considered to be part of the 
- * value (unless part of a comment) so they can be freely 
- * included without needing to be escaped.
+ * the '=' sign must NOT be part of the key or value; it can
+ * only be used as the separator between the key-value pair.
+ * It can be freely used as part of a comment, however.
+ * 
+ * If k and/or v are not NULL, the string is modified such
+ * that NULs are inserted to tokenize the string, and k
+ * (if k != NULL) and/or v (if v != NULL) are made to point to
+ * the key and value, respectively.
  */
-bool is_record_line(char *line, char **k, char **v){
+bool is_record_line(char *line, char k[], char v[], size_t buffsz){
 	assert(line);
-    assert(k && v);
+    say(" ~~ parsing '%s'\n", line);
+    char *key=NULL, *val=NULL;
+    char *key_end=NULL, *val_end=NULL;
 
 	/* strip leading whitespace */
-    line = strip_ws(line);
+    line = strip_lws(line);
 
-	/* first char must be alphanumeric */
-    if (! *line || !(*line)) return false;
-	*k = line;  /* start of key */
+	/* first char must be from the allowable set */
+    if (! *line || !is_allowed(*line)) return false;
+	key = line;  /* start of key */
 
 	/* go to the end of the key */
 	while (*line && is_allowed(*line)) ++line;
 	if (! *line) return false;
-	if (isspace(*line)) *line++ = '\0';  /* end of key */
+    key_end = line;
 	
 	/* intervening whitespace between key, =, and value is allowed */
-    line = strip_ws(line);
-	if (! *line || *line != '=') return false;
-	if(*line == '=' ) *line++ = '\0';
-    line = strip_ws(line);
+    line = strip_lws(line);
+	if (! *line || *line++ != '=') return false;
+    line = strip_lws(line);
 	if (! *line || !is_allowed(*line)) return false;
-	*v = line; /* start of value */
+	val = line; /* start of value */
 
 	/* go to the end of value */
 	while (*line && is_allowed(*line)) ++line;
-	if (! *line) return true;
-    if (!isspace(*line) && !is_comment(*line)) return false;
-	*line++ = '\0';  /* end of value */
+    if (*line && !isspace(*line) && !is_comment(*line)) return false;
+    val_end = line;
 	
 	/* following the value must only be whitespace and optional comment */
-    line = strip_ws(line);
+    line = strip_lws(line);
 	if (*line && !is_comment(*line)) return false;
-    
-    puts("returning true");
+   
+    /* user wants key or/and val extracted and wants the string mangled for that */
+    if (k){
+        cp_to_buff(k, key, buffsz, key_end - key);
+    }
+    if (v){
+        cp_to_buff(v, val, buffsz, val_end - val);
+    }
+
 	return true;
 }
 
-bool is_list_head(char *line, char **k){
+/*
+ * true iff the line is the start of a list.
+ *
+ * This is of the following form:
+ *    listTitle = {
+ * where whitespace everywhere on the line is ignored and an
+ * inline comment can appear last on the line.
+ *
+ * If k is not NULL, then line is modified to extract the actual
+ * key (list name) and k is made to point to it.
+ */
+bool is_list_head(char *line, char k[], size_t buffsz){
 	assert(line);
-    
-    char *key_end = NULL;
+    char *key_start=NULL, *key_end=NULL;
+    say(" ~~ parsing '%s'\n", line);
 
 	/* strip leading whitespace */
-    line = strip_ws(line);
+    line = strip_lws(line);
 
-	/* first char must be alphanumeric */
+	/* first char must be in the allowable set */
 	if (! *line || !is_allowed(*line)) return false;
-	*k = line;  /* start of key */
+	key_start = line;  /* start of key */
 
 	/* go to the end of the key */
 	while (*line && is_allowed(*line)) ++line;
@@ -242,83 +311,136 @@ bool is_list_head(char *line, char **k){
     key_end = line; /* end of key */
 	
 	/* intervening whitespace between key, =, and value is allowed */
-    line = strip_ws(line);
-	if (! *line || *line != '=') return false;
-	++line;
-    line = strip_ws(line);
-	if (! *line || *line != '{') return false;
-	++line;
+    line = strip_lws(line);
+	if (! *line || *line++ != '=') return false;
+    line = strip_lws(line);
+	if (! *line || *line++ != '{') return false;
 
-	/* go to the end of value */
-    line = strip_ws(line);
+	/* only a comment can follow the opening bracket */
+    line = strip_lws(line);
 	if (*line && !is_comment(*line)) return false;
-    
-    *key_end = '\0'; /* NUL-terminate the key */
+   
+    /* use wants the key name extracted and the line mangled to that end */
+    if (k){
+        cp_to_buff(k, key_start, buffsz, key_end - key_start);
+    }
 	return true;
 }
 
+/*
+ * True iff the line marks the end of a list, else false.
+ *
+ * A list ends with a closing curly brace on its own line e.g.
+ *    }
+ * An inline comment is alow allowed as usual provided it comes last
+ * on the line.
+ */
 bool is_list_end(char *line){
 	assert(line);
+    say(" ~~ parsing '%s'\n", line);
 
 	/* strip leading whitespace */
-    line = strip_ws(line);
+    line = strip_lws(line);
 
 	/* first char must be closing brace */
-	if (! *line || (*line != '}')) return false;
+	if (! *line || (*line++ != '}')) return false;
+
+    /* only a comment can follow on the line */
+    line = strip_lws(line);
+    if (*line && !(is_comment(*line))) return false;
 
 	return true;
 }
 
-bool is_list_entry(char *line, char **v, bool *islast){
-    assert(line && v && islast);
-    printf("validating '%s'\n", line);
-    
-    char *val_end = NULL;
+/*
+ * True iff the line represents a list entry, else false.
+ *
+ * A list entry is of the following form:
+ *   someentry # some comment
+ *
+ * The comment is of course optional.
+ * Whitespace can appear before and/or after the value, but the
+ * value itself must be a continuous string with no whitespace gaps.
+ *
+ * All but the last value in the list should be comma-terminated.
+ * There can be arbitrary intervening whitespace between the value and the
+ * comma. The comma should not appear anywhere else as part of the value,
+ * but can as usual appear as part of the optional comment.
+ *
+ * If this is the last value in the list and islast is not NULL, a true 
+ * boolean value will be written to `islast`. 
+ * If v is not NULL, line will be modified the value substring is extracted
+ * from it and v is made to point to it.
+ */
+bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast){
+    assert(line);
+    char *val_start = NULL, *val_end = NULL;
+    bool last_in_list = false;
+    say(" ~~ parsing '%s'\n", line);
 
-	/* strip leading whitespace */
-    line = strip_ws(line);
+	/* strip leading and trailing whitespace */
+    line = strip_lws(line);
+    strip_tws(line);
+
+    /* ensure the comma only appears ONCE in uncommented text */
+    if (char_occurs(',', line, false) > 1) return false;
+
+    say(" ~~ parsing '%s'\n", line);
+    /* first char must be from the allowable set */
 	if (! *line || !is_allowed(*line)) return false;
+    val_start = line;
 
-    *v = line; /* start of item name */
+    /* go to the end of value */
 	while (*line && is_allowed(*line)) ++line;
-    printf("line here = '%s'\n", line);
-    if (! *line){
-        *islast = true; 
-        return true;
-    }else if (*line == ','){
-        *islast = false;
-        val_end = line++;
-    }else if (!isspace(*line) && !is_comment(*line)){
-        return false;
-    }else if (isspace(*line) || is_comment(*line)){
-        *islast = true;
-        val_end = line;
-    }
+    val_end = line;
     
-    //printf("val_end='%s'\n", val_end);
+    /* strip any whitespace */
+    line = strip_lws(line);
 
-    line = strip_ws(line);
-    printf("'%c', %d\n", *line, is_comment(*line));
-    if (*line && !is_comment(*line)) return false;
-    *val_end = '\0';
+    /* char here must be either NUL, a comma, or a comment symbol */
+    if (! *line || is_comment(*line)){
+        last_in_list = true; 
+    }else if (*line == ','){
+        last_in_list = false;
+    }else{
+        return false;
+    }
 
-    printf("returning true, '%s', islast=%d\n", *v, *islast);
+    /* user wants value extracted and line mangled to that end */
+    if (v){
+        cp_to_buff(v, val_start, buffsz, val_end - val_start);
+    }
+
+    /* user wants to know if this value is the last in the list or not */
+    if (islast) *islast = last_in_list;
+
     return true;
 }
 
-
+/*
+ * Parse the .ini config file found at PATH.
+ *
+ * For each line parsed that is NOT a comment or
+ * an empty line, or a section title, or a list start,
+ * or list end -- the CB callback gets called.
+ *
+ * @todo add more detail
+ */
 int Cinic_parse(const char *path, config_cb cb){
 	assert(path && cb);
 
 	int rc = 0;
-    UNUSED(rc);
 	enum cinic_error errnum = CINIC_SUCCESS;
-	char *key = NULL, *val = NULL, *section = NULL;
-    UNUSED(key);
-    UNUSED(val);
-    UNUSED(section);
-    UNUSED(errnum);
-	uint32_t ln = 1;  /* line number */
+	char key[MAX_LINE_LEN]     = {0};
+	char val[MAX_LINE_LEN]     = {0};
+	char section[MAX_LINE_LEN] = {0};
+
+    /* 2=in progress, 1 = have seen last item but not closing brace, 0 = seen closing
+     * brace, list closed */
+    int list_in_progress = 0;
+    bool islast = false;
+	uint32_t ln = 0;  /* line number */
+    uint32_t bytes_read = 0;
 
 	/* allocated and resized by `getline()` as needed */
 	char *buff = NULL;
@@ -330,10 +452,77 @@ int Cinic_parse(const char *path, config_cb cb){
 		exit(EXIT_FAILURE);
 	}
 
-	while (read_line(f, &buff, &buffsz)){
-        // call callback for each line
+	while ( ( bytes_read = read_line(f, &buff, &buffsz)) ){
 		++ln;
-	}
 
+        if(bytes_read > MAX_LINE_LEN){
+            fprintf(stderr, "Maximum allowable line length (%" PRIu32 ") exceeded (%" PRIu32 ") on line %u\n",
+                    MAX_LINE_LEN, bytes_read, ln);
+            exit(EXIT_FAILURE);
+        }
+    
+        if (is_empty_line(buff) || is_comment_line(buff)){
+            continue;
+        }
+        else if(is_section(buff, section, MAX_LINE_LEN)){
+            if (list_in_progress){
+                fprintf(stderr, "Illegal nesting on line %u (unterminated list?)\n", ln);
+                exit(EXIT_FAILURE);
+            }
+            continue;
+        }
+        else if (is_record_line(buff, key, val, MAX_LINE_LEN)){
+            if (! *section && !ALLOW_GLOBAL_RECORDS){
+                fprintf(stderr, "Found record without section on line %u\n", ln);
+                exit(EXIT_FAILURE);
+            }else if (list_in_progress){
+                fprintf(stderr, "Illegal nesting on line %u (unterminated list?)\n", ln);
+                exit(EXIT_FAILURE);
+            }
+        }
+        else if(is_list_head(buff, key, MAX_LINE_LEN)){
+            list_in_progress = 2;
+            continue;
+        }
+        else if(is_list_entry(buff, val, MAX_LINE_LEN, &islast)){
+            if (!list_in_progress){
+                fprintf(stderr, "List item but no list on line %u\n", ln);
+                exit(EXIT_FAILURE);
+            }else if(list_in_progress == 1){
+                fprintf(stderr, "Malformed list on line %u (previous missing comma ?)\n", ln);
+                exit(EXIT_FAILURE);
+            }
+            if (islast){
+                --list_in_progress; /* reset :  */
+            }
+        }
+        else if(is_list_end(buff)){
+            if (list_in_progress == 2){
+                fprintf(stderr, "Malformed list on line %u (previous redundant comma ?)\n", ln);
+                exit(EXIT_FAILURE);
+            }
+            else if(!list_in_progress){
+                fprintf(stderr, "Malformed list on line %u (redundant closing brace?)\n", ln);
+                exit(EXIT_FAILURE);
+            }
+            else if(list_in_progress == 1){
+                list_in_progress = 0;
+            }
+        }
+        else{
+            fprintf(stderr, "Failed to parse line %u in %s\n", ln, path);
+            exit(EXIT_FAILURE);
+        }
+        errnum = CINIC_SUCCESS;
+        rc = cb(ln, section, key, val, errnum);
+        if (rc) return rc;    
+	}
+    
+    fclose(f);  /* fopen resources */
+    free(buff); /* getline buffer */
 	return 0;   /* success */
+}
+
+void Cinic_init(int allow_globals){
+    ALLOW_GLOBAL_RECORDS = allow_globals;
 }
