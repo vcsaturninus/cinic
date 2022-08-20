@@ -209,6 +209,7 @@ int main(int argc, char **argv){
     run_test(test_list_entry, ", ", false, false, NULL);
     run_test(test_list_entry, " ,,", false, false, NULL);
     run_test(test_list_entry, ",some", false, false, NULL);
+    run_test(test_list_entry, "item , blah    ", false, false, NULL);
     run_test(test_list_entry, "item ,", true, false, "item");
     run_test(test_list_entry, "a.b.@c.D---E.f__        ,;,,", true, false, "a.b.@c.D---E.f__");
     run_test(test_list_entry, "some", true, true, "some");

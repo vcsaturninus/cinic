@@ -402,7 +402,14 @@ bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast){
         last_in_list = true; 
     }else if (*line == ','){
         last_in_list = false;
-    }else{
+        ++line;
+
+        /* only whitespace or a comment can follow the comma */
+        line = strip_lws(line);
+        if (*line && !is_comment(*line)){
+            return false;
+        }
+    }else{  /* not NUL, nor a comma, nor a comment symbol */
         return false;
     }
 
