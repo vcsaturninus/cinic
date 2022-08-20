@@ -2,6 +2,7 @@
 #define CINIC_H__
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>     /* memset(), strcmp() */
 
@@ -17,7 +18,11 @@ enum cinic_error{
 	CINIC_NOSECTION,
 	CINIC_MALFORMED,
 	CINIC_TOOLONG,
-	CINIC_NONEWLINE,
+    CINIC_NESTED,
+    CINIC_NOLIST,
+    CINIC_MISSING_COMMA,
+    CINIC_REDUNDANT_COMMA,
+    CINIC_REDUNDANT_BRACE,
 	CINIC_SENTINEL        /* max index in cinic_error_strings */
 };
 
@@ -39,6 +44,7 @@ enum cinic_error{
 typedef 
 int (* config_cb)(
 		uint32_t ln,         /* line number in the config file, starting from 1 */
+        bool list_ongoing,   /* the current line is a list head or a list entry */
 		const char *section, /* ini config section */		
 		const char *k,       /* section key */
 		const char *v,       /* section value */

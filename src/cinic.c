@@ -29,7 +29,6 @@ const char *cinic_error_strings[] = {
 	[CINIC_NOSECTION]    = "Entry without section",
 	[CINIC_MALFORMED]    = "Syntactically incorrect line",
 	[CINIC_TOOLONG]      = "Line length exceeds maximum acceptable length",
-	[CINIC_NONEWLINE]    = "Newline not found",
 	[CINIC_SENTINEL]     =  NULL 
 };
 
@@ -39,6 +38,49 @@ const char *Cinic_err2str(unsigned int errnum){
 		exit(EXIT_FAILURE);
 	}
 	return cinic_error_strings[errnum];
+}
+
+void cinic_exit_print(enum cinic_error error, uint32_t ln, uint32_t line_len){
+    assert(error < CINIC_SENTINEL && error > CINIC_SUCCESS);
+
+    switch(error){
+        case CINIC_NOSECTION:
+            fprintf(stderr, "Cinic: Found entry without section on line %u.\n", ln);
+            break;
+
+        case CINIC_MALFORMED:
+            fprintf(stderr, "Cinic: Failed to parse line %u (malformed/syntactically incorrect)\n", ln);
+            break;
+
+        case CINIC_TOOLONG:
+            fprintf(stderr, "Cinic: Line %u (%u) exceeds maximum acceptable length (%u)\n",
+                    ln, line_len, MAX_LINE_LEN);
+            break;
+
+        case CINIC_NESTED:
+            fprintf(stderr, "Cinic: Illegal nesting on line %u (unterminated list?)\n", ln);
+            break;
+
+        case CINIC_NOLIST:
+            fprintf(stderr, "Cinic: Found list item without list on line %u\n", ln);
+            break;
+
+        case CINIC_MISSING_COMMA:
+            fprintf(stderr, "Cinic: Malformed list entry on line %u (previous missing comma?)\n", ln);
+            break;
+
+        case CINIC_REDUNDANT_COMMA:
+            fprintf(stderr, "Cinic: Malformed list entry on line %u (redundant comma?)\n", ln);
+            break;
+
+        case CINIC_REDUNDANT_BRACE:
+            fprintf(stderr, "Cinic: Malformed list on line %u (redundant closing brace?)\n", ln);
+            break;
+
+        default:
+            break;
+        }
+    exit(EXIT_FAILURE);
 }
 
 /*
@@ -463,28 +505,22 @@ int Cinic_parse(const char *path, config_cb cb){
 		++ln;
 
         if(bytes_read > MAX_LINE_LEN){
-            fprintf(stderr, "Maximum allowable line length (%" PRIu32 ") exceeded (%" PRIu32 ") on line %u\n",
-                    MAX_LINE_LEN, bytes_read, ln);
-            exit(EXIT_FAILURE);
+            cinic_exit_print(CINIC_TOOLONG, ln, buffsz); 
         }
-    
-        if (is_empty_line(buff) || is_comment_line(buff)){
+        else if (is_empty_line(buff) || is_comment_line(buff)){
             continue;
         }
         else if(is_section(buff, section, MAX_LINE_LEN)){
             if (list_in_progress){
-                fprintf(stderr, "Illegal nesting on line %u (unterminated list?)\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_NESTED, ln, buffsz);
             }
             continue;
         }
         else if (is_record_line(buff, key, val, MAX_LINE_LEN)){
             if (! *section && !ALLOW_GLOBAL_RECORDS){
-                fprintf(stderr, "Found record without section on line %u\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_NOSECTION, ln, buffsz);
             }else if (list_in_progress){
-                fprintf(stderr, "Illegal nesting on line %u (unterminated list?)\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_NESTED, ln, buffsz);
             }
         }
         else if(is_list_head(buff, key, MAX_LINE_LEN)){
@@ -493,11 +529,9 @@ int Cinic_parse(const char *path, config_cb cb){
         }
         else if(is_list_entry(buff, val, MAX_LINE_LEN, &islast)){
             if (!list_in_progress){
-                fprintf(stderr, "List item but no list on line %u\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_NOLIST, ln, buffsz);
             }else if(list_in_progress == 1){
-                fprintf(stderr, "Malformed list on line %u (previous missing comma ?)\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_MISSING_COMMA, ln, buffsz);
             }
             if (islast){
                 --list_in_progress; /* reset :  */
@@ -505,23 +539,21 @@ int Cinic_parse(const char *path, config_cb cb){
         }
         else if(is_list_end(buff)){
             if (list_in_progress == 2){
-                fprintf(stderr, "Malformed list on line %u (previous redundant comma ?)\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_REDUNDANT_COMMA, ln, buffsz);
             }
             else if(!list_in_progress){
-                fprintf(stderr, "Malformed list on line %u (redundant closing brace?)\n", ln);
-                exit(EXIT_FAILURE);
+                cinic_exit_print(CINIC_REDUNDANT_BRACE, ln, buffsz);
             }
             else if(list_in_progress == 1){
                 list_in_progress = 0;
             }
+            continue;
         }
         else{
-            fprintf(stderr, "Failed to parse line %u in %s\n", ln, path);
-            exit(EXIT_FAILURE);
+            cinic_exit_print(CINIC_MALFORMED, ln, buffsz);
         }
         errnum = CINIC_SUCCESS;
-        rc = cb(ln, section, key, val, errnum);
+        rc = cb(ln, list_in_progress ? 1 : 0, section, key, val, errnum);
         if (rc) return rc;    
 	}
     
