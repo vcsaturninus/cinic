@@ -6,80 +6,44 @@
 #include <inttypes.h>   /* PRIu32 etc */
 
 #include "cinic.h"
+#include "utils__.h"
 
-
-#define UNUSED(x) do{ (void)x; } while(0)
-
-//#define DEBUG_MODE
-#ifdef DEBUG_MODE
-#   define say(...) fprintf(stderr, __VA_ARGS__);
-#else 
-#   define say(...) 
-#endif
-
-static int ALLOW_GLOBAL_RECORDS=0;
+int ALLOW_GLOBAL_RECORDS=0;
+int ALLOW_EMPTY_LISTS=0;
 
 /* 
  * Map of cinic error number to error string;
  * The last entry is a sentinel marking the greatest
  * index in the array. This makes it possible to catch
  * attempts to index out of bounds (see Cinic_err2str()). */
-const char *cinic_error_strings[] = {
-	[CINIC_SUCCESS]      = "Success",
-	[CINIC_NOSECTION]    = "Entry without section",
-	[CINIC_MALFORMED]    = "Syntactically incorrect line",
-	[CINIC_TOOLONG]      = "Line length exceeds maximum acceptable length",
+static const char *cinic_error_strings[] = {
+    [CINIC_SUCCESS]         = "Success",
+    [CINIC_NOSECTION]       = "entry without section",
+    [CINIC_MALFORMED]       = "malformed/syntacticaly incorrect",
+    [CINIC_TOOLONG]         = "line length exceeds maximum acceptable length(" tostring(MAX_LINE_LEN) ")",
+    [CINIC_NESTED]          = "illegal nesting (unterminated list?)",
+    [CINIC_NOLIST]          = "list item without list",
+    [CINIC_EMPTY_LIST]      = "malformed list (empty list?)",
+    [CINIC_MISSING_COMMA]   = "malformed list entry (previous missing comma?)",
+    [CINIC_REDUNDANT_COMMA] = "malformed list entry (redundant comma?)",
+    [CINIC_REDUNDANT_BRACE] = "malformed list (redundant brace?)",
 	[CINIC_SENTINEL]     =  NULL 
 };
 
-const char *Cinic_err2str(unsigned int errnum){
+    
+const char *Cinic_err2str(enum cinic_error errnum){
 	if (errnum > CINIC_SENTINEL){  /* guard against out-of-bounds indexing attempt */
 		fprintf(stderr, "Invalid cinic error number: '%d'\n", errnum);
-		exit(EXIT_FAILURE);
+		exit(errnum);
 	}
 	return cinic_error_strings[errnum];
 }
 
-void cinic_exit_print(enum cinic_error error, uint32_t ln, uint32_t line_len){
+
+void cinic_exit_print(enum cinic_error error, uint32_t ln){
     assert(error < CINIC_SENTINEL && error > CINIC_SUCCESS);
-
-    switch(error){
-        case CINIC_NOSECTION:
-            fprintf(stderr, "Cinic: Found entry without section on line %u.\n", ln);
-            break;
-
-        case CINIC_MALFORMED:
-            fprintf(stderr, "Cinic: Failed to parse line %u (malformed/syntactically incorrect)\n", ln);
-            break;
-
-        case CINIC_TOOLONG:
-            fprintf(stderr, "Cinic: Line %u (%u) exceeds maximum acceptable length (%u)\n",
-                    ln, line_len, MAX_LINE_LEN);
-            break;
-
-        case CINIC_NESTED:
-            fprintf(stderr, "Cinic: Illegal nesting on line %u (unterminated list?)\n", ln);
-            break;
-
-        case CINIC_NOLIST:
-            fprintf(stderr, "Cinic: Found list item without list on line %u\n", ln);
-            break;
-
-        case CINIC_MISSING_COMMA:
-            fprintf(stderr, "Cinic: Malformed list entry on line %u (previous missing comma?)\n", ln);
-            break;
-
-        case CINIC_REDUNDANT_COMMA:
-            fprintf(stderr, "Cinic: Malformed list entry on line %u (redundant comma?)\n", ln);
-            break;
-
-        case CINIC_REDUNDANT_BRACE:
-            fprintf(stderr, "Cinic: Malformed list on line %u (redundant closing brace?)\n", ln);
-            break;
-
-        default:
-            break;
-        }
+    
+    fprintf(stderr, "Cinic: failed to parse line %u -- %s\n", ln, Cinic_err2str(error));
     exit(EXIT_FAILURE);
 }
 
@@ -105,7 +69,7 @@ static inline char *strip_tws(char *s){
 
 /* 
  * Return true if c is a comment symbol (# or ;), else false */
-bool is_comment(unsigned char c){
+static inline bool is_comment(unsigned char c){
 	if (c == ';' || c == '#'){
 		return true;
 	}
@@ -142,7 +106,7 @@ static inline bool is_allowed(unsigned char c){
  * if through_comments is false, then this function
  * stops as soon as it runs into a comment symbol,
  * otherwise it keeps going even through a comment. */
-uint32_t char_occurs(char c, char *s, bool through_comments){
+static inline uint32_t char_occurs(char c, char *s, bool through_comments){
 	assert(s);
 	uint32_t count = 0;
 
@@ -200,7 +164,7 @@ uint32_t read_line(FILE *f, char **buff, size_t *buffsz){
 	return rc;
 }
 
-void cp_to_buff(char dst[], char *src, size_t buffsz, size_t null_at){
+static void cp_to_buff(char dst[], char *src, size_t buffsz, size_t null_at){
     assert(dst && src);
     memset(dst, 0, buffsz);
     strncpy(dst, src, buffsz-1);
@@ -479,14 +443,11 @@ int Cinic_parse(const char *path, config_cb cb){
 	assert(path && cb);
 
 	int rc = 0;
-	enum cinic_error errnum = CINIC_SUCCESS;
 	char key[MAX_LINE_LEN]     = {0};
 	char val[MAX_LINE_LEN]     = {0};
 	char section[MAX_LINE_LEN] = {0};
 
-    /* 2=in progress, 1 = have seen last item but not closing brace, 0 = seen closing
-     * brace, list closed */
-    int list_in_progress = 0;
+    enum cinic_list_state list = NOLIST;
     bool islast = false;
 	uint32_t ln = 0;  /* line number */
     uint32_t bytes_read = 0;
@@ -505,55 +466,61 @@ int Cinic_parse(const char *path, config_cb cb){
 		++ln;
 
         if(bytes_read > MAX_LINE_LEN){
-            cinic_exit_print(CINIC_TOOLONG, ln, buffsz); 
+            cinic_exit_print(CINIC_TOOLONG, ln); 
         }
         else if (is_empty_line(buff) || is_comment_line(buff)){
             continue;
         }
         else if(is_section(buff, section, MAX_LINE_LEN)){
-            if (list_in_progress){
-                cinic_exit_print(CINIC_NESTED, ln, buffsz);
+            if (list){
+                cinic_exit_print(CINIC_NESTED, ln);
             }
             continue;
         }
         else if (is_record_line(buff, key, val, MAX_LINE_LEN)){
             if (! *section && !ALLOW_GLOBAL_RECORDS){
-                cinic_exit_print(CINIC_NOSECTION, ln, buffsz);
-            }else if (list_in_progress){
-                cinic_exit_print(CINIC_NESTED, ln, buffsz);
+                cinic_exit_print(CINIC_NOSECTION, ln);
+            }else if (list){
+                cinic_exit_print(CINIC_NESTED, ln);
             }
         }
         else if(is_list_head(buff, key, MAX_LINE_LEN)){
-            list_in_progress = 2;
+            list = LIST_START;
+            islast = false;
             continue;
         }
         else if(is_list_entry(buff, val, MAX_LINE_LEN, &islast)){
-            if (!list_in_progress){
-                cinic_exit_print(CINIC_NOLIST, ln, buffsz);
-            }else if(list_in_progress == 1){
-                cinic_exit_print(CINIC_MISSING_COMMA, ln, buffsz);
+            if (!list){
+                cinic_exit_print(CINIC_NOLIST, ln);
+            }else if(list == LIST_END){
+                cinic_exit_print(CINIC_MISSING_COMMA, ln);
             }
+
             if (islast){
-                --list_in_progress; /* reset :  */
+                list = LIST_END ; /* reset :  */
+            }else{
+                list = LIST_ONGOING;  /* regular entry in list */
             }
         }
         else if(is_list_end(buff)){
-            if (list_in_progress == 2){
-                cinic_exit_print(CINIC_REDUNDANT_COMMA, ln, buffsz);
+            if (list == LIST_ONGOING){
+                cinic_exit_print(CINIC_REDUNDANT_COMMA, ln);
             }
-            else if(!list_in_progress){
-                cinic_exit_print(CINIC_REDUNDANT_BRACE, ln, buffsz);
+            else if(list == NOLIST){
+                cinic_exit_print(CINIC_REDUNDANT_BRACE, ln);
             }
-            else if(list_in_progress == 1){
-                list_in_progress = 0;
+            else if(list == LIST_START && !ALLOW_EMPTY_LISTS){
+                cinic_exit_print(CINIC_EMPTY_LIST, ln);
+            }
+            else if(list == LIST_END){
+                list = NOLIST;
             }
             continue;
         }
         else{
-            cinic_exit_print(CINIC_MALFORMED, ln, buffsz);
+            cinic_exit_print(CINIC_MALFORMED, ln);
         }
-        errnum = CINIC_SUCCESS;
-        rc = cb(ln, list_in_progress ? 1 : 0, section, key, val, errnum);
+        rc = cb(ln, list, section, key, val);
         if (rc) return rc;    
 	}
     
@@ -562,6 +529,7 @@ int Cinic_parse(const char *path, config_cb cb){
 	return 0;   /* success */
 }
 
-void Cinic_init(int allow_globals){
+void Cinic_init(bool allow_globals, bool allow_empty_lists){
     ALLOW_GLOBAL_RECORDS = allow_globals;
+    ALLOW_EMPTY_LISTS = allow_empty_lists;
 }
