@@ -10,6 +10,6 @@ int mycb(uint32_t ln, enum cinic_list_state list, const char *section, const cha
 }
 
 int main(int argc, char **argv){
-    Cinic_init(false, false);
+    Cinic_init(false, false, ".");
     Cinic_parse("/home/vcsaturninus/common/repos/others/cinic/tests/what.ini", mycb);
 }

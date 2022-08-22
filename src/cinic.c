@@ -8,8 +8,33 @@
 #include "cinic.h"
 #include "utils__.h"
 
-int ALLOW_GLOBAL_RECORDS=0;
-int ALLOW_EMPTY_LISTS=0;
+/*
+ * By default each key-value entry must appear following a section
+ * declaration. Setting this to true makes it legal (where it would
+ * otherwise produce an error) to have 'global' key-value entries
+ * (or lists) i.e. entries that precede any section declarations.
+ */
+bool ALLOW_GLOBAL_RECORDS=0;
+
+/*
+ * By default an empty list (list without elements) produces an error.
+ * Setting this to true will make such list occurences in an .ini file
+ * legal. This is still discouraged practice though as empty lists 
+ * are useless.
+ */
+bool ALLOW_EMPTY_LISTS=0;
+
+/* 
+ * Set the namespace delimiter in section titles e.g.
+ * section.subsection.subsubsection; '.' is the default. 
+ * Note this is only significant for the lua or C++ wrappers as
+ * there the parser returns a table/map where namespace nesting
+ * is represented by table/map nesting. In C code however the
+ * parser simply calls a user-registered callback and section names
+ * are returned as whole strings. It's up to the user whether 
+ * they want to split it up into a namespace hierarchy or not.
+ */
+const char *SECTION_NS_SEP = ".";
 
 /* 
  * Map of cinic error number to error string;
@@ -529,7 +554,17 @@ int Cinic_parse(const char *path, config_cb cb){
 	return 0;   /* success */
 }
 
-void Cinic_init(bool allow_globals, bool allow_empty_lists){
+void Cinic_init(bool allow_globals, 
+                bool allow_empty_lists,
+                const char *section_delim
+                )
+{
     ALLOW_GLOBAL_RECORDS = allow_globals;
     ALLOW_EMPTY_LISTS = allow_empty_lists;
+
+    if (strlen(section_delim) > 1){
+        fprintf(stderr, "Invalid section delimiter specified: '%s' -- must be a single char\n", section_delim);
+        exit(EXIT_FAILURE);
+    }
+    SECTION_NS_SEP = section_delim;
 }

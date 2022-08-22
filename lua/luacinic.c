@@ -12,26 +12,20 @@
 #include "cinic.h"
 #include "utils__.h"
 
-extern int ALLOW_EMPTY_LISTS;
-extern int ALLOW_GLOBAL_RECORDS;
-
 void dispatch_lua_error(lua_State *L, enum cinic_error error, uint32_t ln){
     assert(error < CINIC_SENTINEL && error > CINIC_SUCCESS);
-    luaL_error(L, "Cinic: failed to parse line %u -- %s\n", ln, Cinic_err2str(error));
+    luaL_error(L, "Cinic: failed to parse line %d -- %s\n", ln, Cinic_err2str(error));
 }
 
 /* get t[k] and leave it on top of the stack.
  * this table is crated if it does not exist */
 void get_or_create(lua_State *L, char *k){
-    //printf("top=%u, type=%d, string=%d\n", lua_gettop(L), lua_type(L, 1), LUA_TSTRING);
-    printf("called with %s\n", k);
     if (lua_getfield(L, -1, k) != LUA_TTABLE){
         lua_remove(L, -1);
         lua_newtable(L);
         lua_setfield(L, -2, k);
         lua_getfield(L, -1, k);
     }
-    printf("top=%u, type=%d, string=%d, table=%d\n", lua_gettop(L), lua_type(L, -1), LUA_TSTRING, LUA_TTABLE);
 }
 
 int populate_lua_state(lua_State *L, 
@@ -42,7 +36,6 @@ int populate_lua_state(lua_State *L,
                        char *v
                        )
 {
-    printf("1, section=%s, k=%s, v=%s\n", section, k, v);
     static LUA_INTEGER idx = 1;
 
     /* make copy of section title because strtok mangles it */
@@ -51,11 +44,10 @@ int populate_lua_state(lua_State *L,
     memset(sect, 0, len);
     memcpy(sect, section, len);
 
-    char *s = strtok(sect, ".");
+    char *s = strtok(sect, SECTION_NS_SEP);
     while (s){
-        printf("s is %s\n", s);
         get_or_create(L, s);
-        s = strtok(NULL, ".");
+        s = strtok(NULL, SECTION_NS_SEP);
     }
 
     /* record mode, k=v pair in an already-started section */
@@ -86,16 +78,56 @@ int populate_lua_state(lua_State *L,
     return 0;
 }
 
+/*
+ * Parse the specified .ini config file and return a lua table.
+ *
+ * <-- path, @lua; <string>
+ *     Path to .ini file to parse
+ *
+ * <-- allow_globals, @lua; <bool>
+ *     If true, global entries (entries that prece any section 
+ *     declarations) are considered legal, where they would 
+ *     otherwise produce an error by default.
+ *
+ * <-- section_delim, @lua; <char>
+ *     The namespace separator to use in section titles. DOT ('.')
+ *     is the default.
+ *
+ * Note that for lua other initialization is done implicitly rather
+ * than being left up to the user:
+ *  * empty lists are allowed
+ */
 int parse_ini_config_file(lua_State *L){
     /* get path to config file to parse */
-    lua_settop(L, 1);   /* path is the only argument */
+    lua_settop(L, 3);
     char *path = NULL;
 
+    /* make local copy as lua's string may be garbage collected */
     const char *arg = luaL_checkstring(L, 1);
     if (! (path = calloc(1, strlen(arg) + 1)) ){
         luaL_error(L, "Memory allocation error (calloc())");
     }
     memcpy(path, arg, strlen(arg));
+
+    bool allow_globals      = false;
+    bool allow_empty_lists  = true;  /* implcitly allow this */
+    const char *ns_delim  = ".";
+
+    /* check initialization flags */
+    if (lua_type(L, 2) != LUA_TNIL){
+        luaL_checktype(L, 2, LUA_TBOOLEAN);
+        allow_globals = lua_toboolean(L,2);
+    }
+    if (lua_type(L, 3) != LUA_TNONE){
+        const char *delim = luaL_checkstring(L, 3);
+        /* must be a single char! */
+        if (strlen(delim) > 1){
+            luaL_error(L, "Invalid delimiter provided: '%s' -- must be a single char", delim);
+        }
+        ns_delim = delim;
+    }
+    /* initialize cinic parser */ 
+    Cinic_init(allow_globals, allow_empty_lists, ns_delim);
 
     /* parser state */
 	int rc = 0;
@@ -122,7 +154,6 @@ int parse_ini_config_file(lua_State *L){
     lua_newtable(L);
 
 	while ( ( bytes_read = read_line(f, &buff, &buffsz)) ){
-        printf("==========================%s=======================\n", section);
 		++ln;
 
         if(bytes_read > MAX_LINE_LEN){
@@ -196,7 +227,7 @@ const struct luaL_Reg cinic[] = {
 };
 
 /* Open/initialize module */
-int luaopen_libluacinic(lua_State *L){
+int luaopen_cinic(lua_State *L){
     luaL_newlib(L, cinic);
     return 1;
 }

@@ -21,8 +21,9 @@
 #endif
 
 /* defined in cinic.h */
-//extern int ALLOW_GLOBAL_RECORDS;
-//extern int ALLOW_EMPTY_LISTS;
+extern bool ALLOW_GLOBAL_RECORDS;
+extern bool ALLOW_EMPTY_LISTS;
+extern const char *SECTION_NS_SEP;
 
 const char *Cinic_err2str(enum cinic_error errnum);
 void cinic_exit_print(enum cinic_error error, uint32_t ln);
@@ -36,7 +37,6 @@ bool is_list_head(char *line, char k[], size_t buffsz);
 bool is_list_end(char *line);
 bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast);
 int Cinic_parse(const char *path, config_cb cb);
-void Cinic_init(bool allow_globals, bool allow_empty_lists);
 
 
 

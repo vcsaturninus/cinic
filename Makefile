@@ -18,11 +18,14 @@ OUT_CLIB:=libcinic.so
 LUA_SRC:= $(wildcard lua/*.c)
 LUALIB_FLAGS:=-shared -fPIC
 LUALIB_LDFLAGS:=-llua5.3 -lcinic -L$(realpath $(OUT_DIR))
-OUT_LUALIB:=libluacinic.so
+OUT_LUALIB:=cinic.so
 
-TEST_SRC:=$(wildcard tests/*.c)
+CTEST_SRC:=$(wildcard tests/*.c)
 TEST_LDFLAGS:=-L$(realpath $(OUT_DIR)) -lcinic
 OUT_CTESTS:=ctests
+
+LUATEST_SRC:=tests/tests.lua
+
 
 .PHONY: all clean tests
 
@@ -53,10 +56,12 @@ lualib: $(addprefix $(OUT_DIR)/, $(notdir $(LUA_SRC:.c=.o)))
 	@echo "\n[ ] Building $(OUT_LUALIB)"
 	$(CC) $(CFLAGS) $(LUALIB_FLAGS) $(CPPFLAGS) $^ $(LUALIB_LDFLAGS) -o $(OUT_DIR)/$(OUT_LUALIB)
 
-ctests: $(addprefix $(OUT_DIR)/, $(notdir $(TEST_SRC:.c=.o)))
+ctests: $(addprefix $(OUT_DIR)/, $(notdir $(CTEST_SRC:.c=.o)))
 	@echo "\n[ ] Building $(OUT_CTESTS)"
 	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -L$(realpath $(OUT_DIR)) -lcinic -o $(OUT_DIR)/$(OUT_CTESTS)
 
+luatests: lualib
+	@LD_LIBRARY_PATH=$$(realpath $(OUT_DIR)) ./tests/tests.lua
 
 tests: clean clib ctests run
 

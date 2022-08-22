@@ -11,7 +11,7 @@
 #define tostring(x) tostring__(x)
 
 
-#define matches(a, b) do{ (!strcmp(a, b)); } while(0)
+#define matches(a, b) (!strcmp(a, b))
 
 /* maximum allowable line length in config file */
 #define MAX_LINE_LEN 1024U
@@ -105,4 +105,7 @@ const char *Cinic_err2str(
 
 
 
-void Cinic_init(bool allow_globals, bool allow_empty_lists);
+void Cinic_init(bool allow_globals, 
+                bool allow_empty_lists,
+                const char *section_delim
+        );
