@@ -110,6 +110,8 @@ bool test_list_entry(char *str, bool expected, bool islast, char *expv){
 
 
 int main(int argc, char **argv){
+    printf(" ~~~~ Running C tests ~~~~ \n");
+
     printf("[ ] Parsing empty lines ... \n");
     run_test(test_empty_line, " ;", false);
     run_test(test_empty_line, "\0", true);
@@ -189,7 +191,6 @@ int main(int argc, char **argv){
     run_test(test_list_header, "__ = {  ", true, "__");
 
     printf("[ ] Parsing list closing lines ... \n");
-    printf("here!!!!!\n");
     run_test(test_list_end, " ", false);
     run_test(test_list_end, " # one", false);
     run_test(test_list_end, " # }", false);

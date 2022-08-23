@@ -120,7 +120,7 @@ static inline void strip_comment(char *s){
     assert(s);
     say(" ~ stripping comment from '%s'\n", s);
     while (*s && !is_comment(*s)) ++s;  /* find comment */
-    if (is_comment(*s)) *s = '\0';
+    *s = '\0';
 }
 
 

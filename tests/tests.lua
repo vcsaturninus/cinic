@@ -4,7 +4,7 @@
 package.cpath = package.cpath .. ";../out/?.so;./out/?.so;"
 
 local cinic = require("cinic")
-local motab = require("motab")
+--local motab = require("motab")
 
 
 local tests_run    = 0
@@ -119,7 +119,7 @@ local function deep_compare(a,b)
     -- is a superset of b
     for k,v in pairs(a) do
         if type(v) == "table" then
-            if not M.deep_compare(v, b[k]) then
+            if not deep_compare(v, b[k]) then
                 return false
             end
         else
@@ -132,7 +132,7 @@ local function deep_compare(a,b)
     -- is b a superset of a
     for k,v in pairs(b) do
         if type(v) == "table" then
-            if not M.deep_compare(v, a[k]) then
+            if not deep_compare(v, a[k]) then
                 return false
             end
         else
@@ -170,6 +170,7 @@ end
 
 --===============================================================
 --
+print(" ~~~~ Running Lua tests ~~~~ ")
 run(empty, "empty.ini")
 run(flat, "flat.ini")
 run(nested, "nested.ini")
