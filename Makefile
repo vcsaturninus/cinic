@@ -83,7 +83,7 @@ clean:
 	rm -rf $(OUT_DIR) $(VALGRIND_OUT)
 	mkdir -p $(OUT_DIR)
 
-grind: ctests
+grind: build_ctests
 	LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) \
 	valgrind --leak-check=full --show-leak-kinds=all \
 		--track-origins=yes --verbose \
