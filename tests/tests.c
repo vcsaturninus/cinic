@@ -111,7 +111,7 @@ bool test_list_entry(char *str, bool expected, bool islast, char *expv){
 
 int main(int argc, char **argv){
     printf(" ~~~~ Running C tests ~~~~ \n");
-
+#if 0
     printf("[ ] Parsing empty lines ... \n");
     run_test(test_empty_line, " ;", false);
     run_test(test_empty_line, "\0", true);
@@ -169,46 +169,46 @@ int main(int argc, char **argv){
     run_test(test_kv_line, "mykey     =myval # mycomment, k=v", true, "mykey", "myval");
     run_test(test_kv_line, " __key__ = ---val.val.val- ", true, "__key__", "---val.val.val-");
     run_test(test_kv_line, "key1-=-2val ", true, "key1-", "-2val");
-
+#endif
 
     printf("[ ] Parsing list headers ... \n");
     run_test(test_list_header, " ", false, NULL);
     run_test(test_list_header, " # one", false, NULL);
     run_test(test_list_header, " [ ]", false, NULL);
     run_test(test_list_header, "a=[] ", false, NULL);
-    run_test(test_list_header, " my_list = {. ", false, NULL);
-    run_test(test_list_header, "mylist = [ ",false, NULL);
-    run_test(test_list_header, "={", false, NULL);
-    run_test(test_list_header, "#mylist={", false, NULL);
-    run_test(test_list_header, "mylist={=", false, NULL);
-    run_test(test_list_header, "mylist={", true, "mylist");
-    run_test(test_list_header, "mylist={ ; some comment", true, "mylist");
-    run_test(test_list_header, "mylist={#{{{", true, "mylist");
-    run_test(test_list_header, "mylist ={", true, "mylist");
-    run_test(test_list_header, "  mylist      ={  ", true, "mylist");
-    run_test(test_list_header, "mylist=  { ", true, "mylist");
-    run_test(test_list_header, "my.list- = {", true, "my.list-");
-    run_test(test_list_header, "__ = {  ", true, "__");
+    run_test(test_list_header, " my_list = [. ", false, NULL);
+    run_test(test_list_header, "mylist = [ ", true, "mylist");
+    run_test(test_list_header, "=[", false, NULL);
+    run_test(test_list_header, "#mylist=[", false, NULL);
+    run_test(test_list_header, "mylist=[=", false, NULL);
+    run_test(test_list_header, "mylist=[", true, "mylist");
+    run_test(test_list_header, "mylist=[ ; some comment", true, "mylist");
+    run_test(test_list_header, "mylist=[#[[[", true, "mylist");
+    run_test(test_list_header, "mylist =[", true, "mylist");
+    run_test(test_list_header, "  mylist      =[  ", true, "mylist");
+    run_test(test_list_header, "mylist=  [ ", true, "mylist");
+    run_test(test_list_header, "my.list- = [", true, "my.list-");
+    run_test(test_list_header, "__ = [  ", true, "__");
 
     printf("[ ] Parsing list closing lines ... \n");
     run_test(test_list_end, " ", false);
     run_test(test_list_end, " # one", false);
-    run_test(test_list_end, " # }", false);
-    run_test(test_list_end, ";}", false);
-    run_test(test_list_end, "a}", false);
-    run_test(test_list_end, "----}", false);
-    run_test(test_list_end, "}", true);
-    run_test(test_list_end, "   }", true);
-    run_test(test_list_end, " }      ", true);
-    run_test(test_list_end, "} ; some comment", true);
-    run_test(test_list_end, "  } # comment", true);
+    run_test(test_list_end, " # ]", false);
+    run_test(test_list_end, ";]", false);
+    run_test(test_list_end, "a]", false);
+    run_test(test_list_end, "----]", false);
+    run_test(test_list_end, "]", true);
+    run_test(test_list_end, "   ]", true);
+    run_test(test_list_end, " ]      ", true);
+    run_test(test_list_end, "] ; some comment", true);
+    run_test(test_list_end, "  ] # comment", true);
 
     printf("[ ] Parsing list item lines ... \n");
     run_test(test_list_entry, " ", false, false, NULL);
     run_test(test_list_entry, " # ", false, false, NULL);
     run_test(test_list_entry, "; some comment ", false, false, NULL);
-    run_test(test_list_entry, " } ", false, false, NULL);
-    run_test(test_list_entry, " {", false, false, NULL);
+    run_test(test_list_entry, " ] ", false, false, NULL);
+    run_test(test_list_entry, " [", false, false, NULL);
     run_test(test_list_entry, "[ section ]", false, false, NULL);
     run_test(test_list_entry, ", ", false, false, NULL);
     run_test(test_list_entry, " ,,", false, false, NULL);

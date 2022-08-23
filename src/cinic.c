@@ -46,7 +46,7 @@ const char *SECTION_NS_SEP = ".";
  * being the opening bracket and LIST_BRACKET[1] being the closing
  * bracket.
  */
-const char *LIST_BRACKET = "{}";
+const char *LIST_BRACKET = "[]";
 
 /*
  * Map of cinic error number to error string;
