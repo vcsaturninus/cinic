@@ -4,20 +4,11 @@
 #include <stdint.h>
 
 #include "cinic.h"
+#include "utils__.h"
 
 static uint32_t tests_run = 0;
 static uint32_t tests_passed = 0;
 static bool passed = false;
-
-/* defined in src/cinic.c */
-bool is_section(char *line, char name[], size_t buffsz);
-bool is_empty_line(char *line);
-bool is_comment_line(char *line);
-bool is_record_line(char *line, char k[], char v[], size_t buffsz);
-bool is_list_head(char *line, char k[], size_t buffsz);
-bool is_list_end(char *line);
-bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast);
-
 
 #define run_test(f, ...) \
     tests_run++; \
@@ -190,18 +181,41 @@ int main(int argc, char **argv){
     run_test(test_list_header, "my.list- = [", true, "my.list-");
     run_test(test_list_header, "__ = [  ", true, "__");
 
+    run_test(test_list_header, "mylist = [one  ", false, "__");
+    run_test(test_list_header, "   my.list=  [ one, two, three  ", false, NULL);
+    run_test(test_list_header, "   my.list=  [ one, two three,  ", false, NULL);
+    run_test(test_list_header, "   my.list=  [ one, two, three,,  ", false, NULL);
+    run_test(test_list_header, "   my.list=  [ one, two, three, ,  ", false, NULL);
+    run_test(test_list_header, "   my.list=  [ one, two, , three, # failed  ", false, NULL);
+    run_test(test_list_header, " my.list =[ one ., two, three  ", false, NULL);
+    run_test(test_list_header, " my.list =[ one, two, three  ", false, NULL);
+    run_test(test_list_header, " my.list =[ one, two, three  ]]", false, NULL);
+    run_test(test_list_header, " my.list =[ one, two, three  ] ]", false, NULL);
+    run_test(test_list_header, " my.list =[[ one, two, three  ]; ]", false, NULL);
+
+    run_test(test_list_header, "mylist = [one,  # yes", true, "mylist");
+    run_test(test_list_header, "mylist = [one, two  , three ,  ", true, "mylist");
+    run_test(test_list_header, " Multi=  [   one, two, three   ] ", true, "Multi");
+    run_test(test_list_header, "mylist = [one   ]  ", true, "mylist");
+    run_test(test_list_header, "mylist = [ one, two] ", true, "mylist");
+
     printf("[ ] Parsing list closing lines ... \n");
     run_test(test_list_end, " ", false);
     run_test(test_list_end, " # one", false);
     run_test(test_list_end, " # ]", false);
     run_test(test_list_end, ";]", false);
-    run_test(test_list_end, "a]", false);
-    run_test(test_list_end, "----]", false);
+    run_test(test_list_end, "a]", true);
+    run_test(test_list_end, "----]", true);
     run_test(test_list_end, "]", true);
     run_test(test_list_end, "   ]", true);
     run_test(test_list_end, " ]      ", true);
     run_test(test_list_end, "] ; some comment", true);
     run_test(test_list_end, "  ] # comment", true);
+    run_test(test_list_end, "  one, ] # comment", false);
+    run_test(test_list_end, "  one ] ] # comment", false);
+    run_test(test_list_end, "  one]] # comment", false);
+    run_test(test_list_end, "  one, two, three  ] # comment", true);
+    run_test(test_list_end, "one , two  ,  three] # comment", true);
 
     printf("[ ] Parsing list item lines ... \n");
     run_test(test_list_entry, " ", false, false, NULL);
@@ -213,7 +227,6 @@ int main(int argc, char **argv){
     run_test(test_list_entry, ", ", false, false, NULL);
     run_test(test_list_entry, " ,,", false, false, NULL);
     run_test(test_list_entry, ",some", false, false, NULL);
-    run_test(test_list_entry, "item , blah    ", false, false, NULL);
     run_test(test_list_entry, "item ,", true, false, "item");
     run_test(test_list_entry, "a.b.@c.D---E.f__        ,;,,", true, false, "a.b.@c.D---E.f__");
     run_test(test_list_entry, "some", true, true, "some");
@@ -222,6 +235,10 @@ int main(int argc, char **argv){
     run_test(test_list_entry, "item, ", true, false, "item");
     run_test(test_list_entry, "--item_,; ", true, false, "--item_");
     run_test(test_list_entry, "item___,    ", true, false, "item___");
+
+    run_test(test_list_entry, "item___,    ", true, false, "item___");
+    run_test(test_list_entry, "item , blah    ", true, false, "item");
+    run_test(test_list_entry, "item , blah,    ", true, false, "item");
 
     printf("Passed: %u of %u\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

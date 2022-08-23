@@ -13,7 +13,7 @@
 
 #define UNUSED(x) do{ (void)x; } while(0)
 
-//#define DEBUG_MODE
+#define DEBUG_MODE
 #ifdef DEBUG_MODE
 #   define say(...) fprintf(stderr, __VA_ARGS__);
 #else
@@ -36,6 +36,7 @@ bool is_record_line(char *line, char k[], char v[], size_t buffsz);
 bool is_list_head(char *line, char k[], size_t buffsz);
 bool is_list_end(char *line);
 bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast);
+char *get_list_token(char *line, char buff[], size_t buffsz);
 int Cinic_parse(const char *path, config_cb cb);
 
 

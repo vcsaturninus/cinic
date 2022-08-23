@@ -221,6 +221,8 @@ static void cp_to_buff(char dst[], char *src, size_t buffsz, size_t null_at){
     }else{
         dst[null_at] = '\0';
     }
+    printf("null_at=%zu\n", null_at);
+    printf("--->dst='%s'\n",dst);
 }
 
 /*
@@ -335,6 +337,82 @@ bool is_record_line(char *line, char k[], char v[], size_t buffsz){
     }
 
     return true;
+}
+
+bool is_one_line_list(char *line, char buff[], size_t buffsz){
+    assert(line);
+    line = strip_lws(line);
+    strip_comment(line);
+    strip_tws(line);
+    
+    /* starts with legal char, contains equals sign, opening bracket, and ends with closing bracket */
+    if (is_allowed(*line) &&
+        strchr(line, '=') &&
+        strchr(line, '[') &&
+        line[strlen(line)-1] == LIST_BRACKET[1])
+    { return true; }
+
+    return false;
+}
+
+char *get_list_token(char *line, char buff[], size_t buffsz){
+    assert(line);
+    line = strip_lws(line);
+    strip_comment(line);
+    strip_tws(line);
+    
+    char *start = line;
+    char *end = NULL;
+    char *next = NULL;
+    
+    say(" ~ parsing '%s'\n", line);
+    while (*line && is_allowed(*line)) ++line;
+    line = strip_lws(line);
+    printf("line here = '%s'\n", line);
+
+    /* assume list head */
+    if (*line == '='){
+        ++line; /* get expected opening bracket */
+        line = strip_lws(line);
+        printf("line here = '%s'\n", line);
+        end = line; 
+        printf("end = '%s'\n", end);
+        printf("start = %p, end = %p, end-start = %li\n", start, end, end-start);
+        cp_to_buff(buff, start, buffsz, (end-start) + 1);
+    }
+
+    /* assume comma separator for list items */
+    else if(*line == ','){
+        end = line; 
+        cp_to_buff(buff, start, buffsz, (end - start) + 1);
+    }
+    /* assume list end */
+    else if(*line == LIST_BRACKET[1]){
+        /* last item + closing bracket */ 
+        if (is_allowed(*start)){
+            end = line-1;
+            cp_to_buff(buff, start, buffsz, (end - start) + 1);
+        }
+        /* only bracket alone */
+        else{
+            end = line;
+            cp_to_buff(buff, start, buffsz, (end - start) + 1);
+        }
+    }
+    else{
+        puts("else");
+        end = start + strlen(start);
+        cp_to_buff(buff, start, buffsz, (end - start) + 1);
+    }
+
+    if (! *end /* opening bracket */ || ! *(end+1)){
+        next = NULL;
+    }else{
+        next = end+1;
+    }
+    
+    printf("next will be '%s'\n", next);
+    return next;
 }
 
 /*
