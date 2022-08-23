@@ -16,8 +16,8 @@
 //#define DEBUG_MODE
 #ifdef DEBUG_MODE
 #   define say(...) fprintf(stderr, __VA_ARGS__);
-#else 
-#   define say(...) 
+#else
+#   define say(...)
 #endif
 
 /* defined in cinic.h */

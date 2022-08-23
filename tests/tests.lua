@@ -13,11 +13,11 @@ local tests_passed = 0
 -- Below is a list of tables manually created, known to be correct
 -- representations of input files in samples/; these represent the
 -- expected output, meant to be compared with the actual output returned
--- by the parser. Each table should have the same name as its corresponding 
+-- by the parser. Each table should have the same name as its corresponding
 -- file in samples/
 local empty = {}
 local flat = {
-    ["sect_1"] = {  
+    ["sect_1"] = {
         first = "1st",
         second = "2nd"
     },
@@ -124,12 +124,12 @@ local function deep_compare(a,b)
             end
         else
             if b[k] ~= v then
-                return false 
+                return false
             end
         end
     end
 
-    -- is b a superset of a 
+    -- is b a superset of a
     for k,v in pairs(b) do
         if type(v) == "table" then
             if not M.deep_compare(v, a[k]) then
@@ -137,11 +137,11 @@ local function deep_compare(a,b)
             end
         else
             if a[k] ~= v then
-                return false 
+                return false
             end
         end
     end
-    
+
     -- equivalent sets
     return true
 end

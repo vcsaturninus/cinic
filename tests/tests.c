@@ -35,7 +35,7 @@ bool test_empty_line(char *s, bool expected){
     return (is_empty_line(s) == expected);
 }
 
-/* verify that section names are correctly identified in .ini config files 
+/* verify that section names are correctly identified in .ini config files
  * s must be a char array NOT a read only a char pointer, otherwise the program
  * will segfault as is_section will try to MANGLE the string*/
 bool test_section_name(char *str, bool expected, char *expected_name){
@@ -85,7 +85,9 @@ bool test_list_header(char *str, bool expected, char *expected_name){
 }
 
 bool test_list_end(char *str, bool expected){
-    return (is_list_end(str) == expected);
+    char rwstr[MAX_LINE_LEN] = {0};
+    strncpy(rwstr, str, MAX_LINE_LEN-1);
+    return (is_list_end(rwstr) == expected);
 }
 
 bool test_list_entry(char *str, bool expected, bool islast, char *expv){
@@ -176,7 +178,7 @@ int main(int argc, char **argv){
     run_test(test_list_header, "mylist = [ ",false, NULL);
     run_test(test_list_header, "={", false, NULL);
     run_test(test_list_header, "#mylist={", false, NULL);
-    run_test(test_list_header, "mylist={=", false, NULL); 
+    run_test(test_list_header, "mylist={=", false, NULL);
     run_test(test_list_header, "mylist={", true, "mylist");
     run_test(test_list_header, "mylist={ ; some comment", true, "mylist");
     run_test(test_list_header, "mylist={#{{{", true, "mylist");
@@ -187,6 +189,7 @@ int main(int argc, char **argv){
     run_test(test_list_header, "__ = {  ", true, "__");
 
     printf("[ ] Parsing list closing lines ... \n");
+    printf("here!!!!!\n");
     run_test(test_list_end, " ", false);
     run_test(test_list_end, " # one", false);
     run_test(test_list_end, " # }", false);

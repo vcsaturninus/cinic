@@ -17,15 +17,15 @@
 #define MAX_LINE_LEN 1024U
 
 /*
- * Used to communicate the state of a list. The parser is line-oriented 
- * and it does NOT parse the whole file in one go or ahead of time. 
+ * Used to communicate the state of a list. The parser is line-oriented
+ * and it does NOT parse the whole file in one go or ahead of time.
  * That is to say, the parser can only know if there has been an error
- * on a preceding line or whether the current line is erroneous but does 
+ * on a preceding line or whether the current line is erroneous but does
  * *not* know whether an error is caused by any subsequent line.
  *
  * To deal with lists, state such as the below must be maintained: the head
- * of a list sets LIST_START, all susequent items BUT THE LAST set 
- * LIST_ONGOING, and the last item sets LIST_END. Finally, the closing brace 
+ * of a list sets LIST_START, all susequent items BUT THE LAST set
+ * LIST_ONGOING, and the last item sets LIST_END. Finally, the closing brace
  * resets back to NOLIST.
  */
 enum cinic_list_state{
@@ -58,19 +58,19 @@ enum cinic_error{
  *
  * If errnum is > 0, there has been a parsing error. The callback
  * decides whether errors are ignored or whether they are fatal:
- *   - If the callback returns 0, the parser continues. 
- *   - If the callback returns a value > 0, the parser in turn 
+ *   - If the callback returns 0, the parser continues.
+ *   - If the callback returns a value > 0, the parser in turn
  *     immediately returns that error.
  *
  * errnum can be converted to an error string using `Cinic_err2str()`.
  * The error string has local storage and can only be used until the
  * callback returns.
  */
-typedef 
+typedef
 int (* config_cb)(
 		uint32_t ln,                /* line number in the config file, starting from 1 */
         enum cinic_list_state list, /* used for dealing with lists; see enum definition  */
-		const char *section,        /* ini config section */		
+		const char *section,        /* ini config section */
 		const char *k,              /* section key / list name */
 		const char *v               /* section value / list entry */
 		);
@@ -81,7 +81,7 @@ int (* config_cb)(
  * The parsing is carried out line by line and for each
  * line config_cb is called. If there's been an error, this is passed
  * to config_cb as a value > 0. If config_cb returns 0, the parsing
- * continues; otherwise if config_cb returns a value > 0, the parsing 
+ * continues; otherwise if config_cb returns a value > 0, the parsing
  * is stopped and Cinic_parse returns, in turn, that value. */
 int Cinic_parse(
 		const char *path,    /* path to .ini config file */
@@ -105,7 +105,7 @@ const char *Cinic_err2str(
 
 
 
-void Cinic_init(bool allow_globals, 
+void Cinic_init(bool allow_globals,
                 bool allow_empty_lists,
                 const char *section_delim
         );

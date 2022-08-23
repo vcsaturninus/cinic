@@ -28,7 +28,7 @@ void get_or_create(lua_State *L, char *k){
     }
 }
 
-int populate_lua_state(lua_State *L, 
+int populate_lua_state(lua_State *L,
                        uint32_t ln,
                        enum cinic_list_state list,
                        char *section,
@@ -85,8 +85,8 @@ int populate_lua_state(lua_State *L,
  *     Path to .ini file to parse
  *
  * <-- allow_globals, @lua; <bool>
- *     If true, global entries (entries that prece any section 
- *     declarations) are considered legal, where they would 
+ *     If true, global entries (entries that prece any section
+ *     declarations) are considered legal, where they would
  *     otherwise produce an error by default.
  *
  * <-- section_delim, @lua; <char>
@@ -126,7 +126,7 @@ int parse_ini_config_file(lua_State *L){
         }
         ns_delim = delim;
     }
-    /* initialize cinic parser */ 
+    /* initialize cinic parser */
     Cinic_init(allow_globals, allow_empty_lists, ns_delim);
 
     /* parser state */
@@ -143,7 +143,7 @@ int parse_ini_config_file(lua_State *L){
 	/* allocated and resized by `getline()` as needed */
 	char *buff = NULL;
 	size_t buffsz = 0;
-	
+
 	FILE *f = fopen(path, "r");
 	if (!f){
 		luaL_error(L, "Failed to open file:'%s'", path);
@@ -211,7 +211,7 @@ int parse_ini_config_file(lua_State *L){
             dispatch_lua_error(L, CINIC_MALFORMED, ln);
         }
         rc = populate_lua_state(L, ln, list, section, key, val);
-        if (rc) return rc;    
+        if (rc) return rc;
 	}
 
     fclose(f);  /* fopen resources */

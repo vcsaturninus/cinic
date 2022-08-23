@@ -63,7 +63,7 @@ ctests: $(addprefix $(OUT_DIR)/, $(notdir $(CTEST_SRC:.c=.o)))
 luatests: lualib
 	@LD_LIBRARY_PATH=$$(realpath $(OUT_DIR)) ./tests/tests.lua
 
-tests: clean clib ctests run
+tests: clean clib ctests run lualib luatests
 
 run:
 	@LD_LIBRARY_PATH=$$(realpath $(OUT_DIR)) ./$(OUT_DIR)/$(OUT_CTESTS)
