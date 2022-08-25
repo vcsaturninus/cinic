@@ -4,7 +4,7 @@
 package.cpath = package.cpath .. ";../out/?.so;./out/?.so;"
 
 local cinic = require("cinic")
---local motab = require("motab")
+local motab = require("motab")
 
 
 local tests_run    = 0
@@ -84,7 +84,8 @@ local globals = {
     global2 = {"1","2","3","5"},
     global3 = "last",
     summary = {
-        keycount = "3"
+        keycount = "3",
+        notes = "this is a multi word line with interspersed whitepace"
     }
 }
 local ns_delim = {
@@ -105,6 +106,47 @@ local ns_delim = {
     root = {
         home = {
             path = "/root"
+        }
+    }
+}
+local lists_from_hell = {
+    comment = "lists that are tough to parse",
+    lists = {
+        desc = "contains single-line and multiline lists",
+        single = {
+           desc = "single-line list",
+           list1 = {
+                "FIRST",
+                "second",
+                "3",
+                "4",
+                "5th"
+           },
+           list2 = {
+            "FIRST",
+            "second",
+            "3",
+            "4",
+            "5th"
+           },
+           length = "5"
+        },
+        multi = {
+            list1 = {
+                "first",
+                "second",
+                "third",
+                "fourth"
+            },
+            list2 = {
+                "one",
+                "two",
+                "three",
+                "four",
+                "five"
+            },
+            list3 = {"one", "two", "three"},
+            list4={"one","two","three","four"}
         }
     }
 }
@@ -154,6 +196,7 @@ local function run(expected, file, allow_globals, sep)
     local sep = sep and sep or '.'
     local file = "./samples/" .. file
     local actual = cinic.parse(file, allow_globals, sep)
+    print("actual is " .. motab.ptable(actual, 2))
 
     tests_run = tests_run+1
     local passed = deep_compare(expected, actual)
@@ -177,6 +220,7 @@ run(nested, "nested.ini")
 run(lists, "lists.ini")
 run(globals, "globals.ini", true)
 run(ns_delim, "ns_delim.ini", false, "/")
+run(lists_from_hell, "lists_from_hell.ini", true)
 
 
 print(string.format("Tests passed: %s of %s", tests_passed, tests_run))

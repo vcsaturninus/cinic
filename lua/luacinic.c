@@ -36,6 +36,7 @@ int populate_lua_state(lua_State *L,
                        char *v
                        )
 {
+    printf(" ~ populating lua state with (list = %i) section='%s', k='%s', v='%s'\n", list, section, k, v);
     static LUA_INTEGER idx = 1;
 
     /* make copy of section title because strtok mangles it */
@@ -56,7 +57,7 @@ int populate_lua_state(lua_State *L,
         lua_setfield(L, -2, k);
     }
     /* start of a list/array */
-    else if(list == LIST_START){
+    else if(list == LIST_HEAD){
         idx = 1;
         lua_newtable(L);
         lua_setfield(L, -2, k);
@@ -65,7 +66,7 @@ int populate_lua_state(lua_State *L,
         if (lua_getfield(L, -1, k) != LUA_TTABLE){
             luaL_error(L, "expected table value for key '%s', got something else", k);
         }
-        lua_pushinteger(L, idx);
+        lua_pushinteger(L, idx);  /* array rather than dictionary */
         lua_pushstring(L, v);
         lua_settable(L, -3);
         ++idx;
@@ -74,7 +75,7 @@ int populate_lua_state(lua_State *L,
         luaL_error(L, "internal logic error when parsing list");
     }
 
-    lua_settop(L,1); /* only leave the outermost table */
+    lua_settop(L,1); /* only leave the outermost parent table */
     return 0;
 }
 
@@ -140,9 +141,10 @@ int parse_ini_config_file(lua_State *L){
 	uint32_t ln = 0;  /* line number */
     uint32_t bytes_read = 0;
 
-	/* allocated and resized by `getline()` as needed */
-	char *buff = NULL;
-	size_t buffsz = 0;
+    /* allocated and resized by `getline()` as needed */
+    char *buff__ = NULL;
+    char *buff = buff__;
+    size_t buffsz = 0;
 
 	FILE *f = fopen(path, "r");
 	if (!f){
@@ -153,70 +155,103 @@ int parse_ini_config_file(lua_State *L){
     lua_settop(L, 0);
     lua_newtable(L);
 
-	while ( ( bytes_read = read_line(f, &buff, &buffsz)) ){
-		++ln;
-
+    /* for each line read from config file */ 
+    while ( ( bytes_read = read_line(f, &buff__, &buffsz)) ){
+        ++ln; 
+        buff = buff__;
+        say(" ~ read line %u: '%s'", ln, buff);
+        /* line too long */
         if(bytes_read > MAX_LINE_LEN){
             dispatch_lua_error(L, CINIC_TOOLONG, ln);
         }
-        else if (is_empty_line(buff) || is_comment_line(buff)){
+
+        if (is_empty_line(buff) || is_comment_line(buff) ){
             continue;
         }
-        else if(is_section(buff, section, MAX_LINE_LEN)){
+
+		buff = strip_lws(buff);
+		strip_comment(buff);
+		strip_tws(buff);
+
+        /* section title line */
+        if(is_section(buff, section, MAX_LINE_LEN)){
+            say(" ~ line %u is a section title\n", ln);
             if (list){
                 dispatch_lua_error(L, CINIC_NESTED, ln);
             }
-            continue;
         }
+        
+        /*  key-value line */
         else if (is_record_line(buff, key, val, MAX_LINE_LEN)){
+            say(" ~ line %u is a record line\n", ln);
             if (! *section && !ALLOW_GLOBAL_RECORDS){
                 dispatch_lua_error(L, CINIC_NOSECTION, ln);
             }else if (list){
                 dispatch_lua_error(L, CINIC_NESTED, ln);
             }
+			if ( (rc = populate_lua_state(L, ln, list, section, key, val)) ) return rc;
         }
-        else if(is_list_head(buff, key, MAX_LINE_LEN)){
-            list = LIST_START;
-            islast = false;
-        }
-        else if(is_list_entry(buff, val, MAX_LINE_LEN, &islast)){
-            if (!list){
-                dispatch_lua_error(L, CINIC_NOLIST, ln);
-            }else if(list == LIST_END){
-                dispatch_lua_error(L, CINIC_MISSING_COMMA, ln);
-            }
 
-            if (islast){
-                list = LIST_END ; /* reset :  */
-            }else{
-                list = LIST_ONGOING;  /* regular entry in list */
-            }
-        }
-        else if(is_list_end(buff)){
-            if (list == LIST_ONGOING){
-                dispatch_lua_error(L, CINIC_REDUNDANT_COMMA, ln);
-            }
-            else if(list == NOLIST){
-                dispatch_lua_error(L, CINIC_REDUNDANT_BRACE, ln);
-            }
-            else if(list == LIST_START && !ALLOW_EMPTY_LISTS){
-                dispatch_lua_error(L, CINIC_EMPTY_LIST, ln);
-            }
-            else if(list == LIST_END){
-                list = NOLIST;
-            }
-            continue;
-        }
-        else{
-            dispatch_lua_error(L, CINIC_MALFORMED, ln);
-        }
-        rc = populate_lua_state(L, ln, list, section, key, val);
-        if (rc) return rc;
-	}
+        /* else, try list */
+		else {
+            say(" ~ line %u has list components\n", ln);
+			char curr_token_buff[MAX_LINE_LEN] = {0};
+			char *token = buff;
+            enum cinic_error cerr;
+
+			/* todo: add more states to the list enum: detect redundant opening brackets */
+			while ((token = get_list_token(token, curr_token_buff, MAX_LINE_LEN))){
+                printf("---> current token = '%s'\n", curr_token_buff);
+                
+                /* list head */
+				if(is_list_head(curr_token_buff, key, MAX_LINE_LEN)){
+                    if ( (cerr = infer_list_error(list, LIST_HEAD)) ){
+                        dispatch_lua_error(L, cerr, ln);
+                    }
+					list = LIST_HEAD;
+					islast = false;
+				}
+
+                /* opening bracket */
+                else if (is_list_start(curr_token_buff)){
+                    if ( (cerr = infer_list_error(list, LIST_OPEN)) ){
+                        dispatch_lua_error(L, cerr, ln);
+                    }
+                    list = LIST_OPEN;
+                    continue;
+                }
+
+                /* list entry */
+				else if(is_list_entry(curr_token_buff, val, MAX_LINE_LEN, &islast)){
+                    if ( (cerr = infer_list_error(list, islast ? LIST_END : LIST_ONGOING)) ){
+                        dispatch_lua_error(L, cerr, ln);
+                    }
+					list = islast ? LIST_END : LIST_ONGOING; /* reset :  */
+				}
+
+                /* list end */
+				else if(is_list_end(curr_token_buff)){
+                    if ( (cerr = infer_list_error(list, NOLIST)) ){
+                        dispatch_lua_error(L, cerr, ln);
+                    }
+					list = NOLIST;
+					continue;
+				}
+
+                /* not a list component/token recognized as valid */
+                /* not any kind of line recognized as valid */
+				else{
+                    dispatch_lua_error(L, CINIC_MALFORMED, ln);
+				}
+
+				if ( (rc = populate_lua_state(L, ln, list, section, key, val)) ) return rc;
+			}
+		}
+    }
 
     fclose(f);  /* fopen resources */
-    free(buff); /* getline buffer */
-	return 1;   /* table holding config data */
+    free(buff__); /* we need to maintain the getline buffer pointer for the call to free */
+    return 1;   /* success */
 }
 
 

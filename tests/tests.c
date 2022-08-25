@@ -81,6 +81,12 @@ bool test_list_end(char *str, bool expected){
     return (is_list_end(rwstr) == expected);
 }
 
+bool test_list_start(char *str, bool expected){
+    char rwstr[MAX_LINE_LEN] = {0};
+    strncpy(rwstr, str, MAX_LINE_LEN-1);
+    return (is_list_start(rwstr) == expected);
+}
+
 bool test_list_entry(char *str, bool expected, bool islast, char *expv){
     assert(str);
     char s[strlen(str)+1];
@@ -102,7 +108,7 @@ bool test_list_entry(char *str, bool expected, bool islast, char *expv){
 
 int main(int argc, char **argv){
     printf(" ~~~~ Running C tests ~~~~ \n");
-#if 0
+
     printf("[ ] Parsing empty lines ... \n");
     run_test(test_empty_line, " ;", false);
     run_test(test_empty_line, "\0", true);
@@ -128,20 +134,25 @@ int main(int argc, char **argv){
     run_test(test_section_name, " [one two;]", false, NULL);
     run_test(test_section_name, "# [mysection]", false, NULL);
     run_test(test_section_name, "[mysection]", true, "mysection");
-    run_test(test_section_name, "    [mysection]  ", true, "mysection");
-    run_test(test_section_name, "    [mysection  ] ", true, "mysection");
-    run_test(test_section_name, "    [    mysection  ]", true, "mysection");
+    run_test(test_section_name, "  [mysection]  ", false, NULL);
+    run_test(test_section_name, "    [mysection  ] ", false, NULL);
+    run_test(test_section_name, "[mysection  ]", true, "mysection");
+    run_test(test_section_name, "[    mysection  ]", true, "mysection");
     run_test(test_section_name, "    [mysection one]", false, NULL);
-    run_test(test_section_name, " [  sect.subsect  ]", true, "sect.subsect");
-    run_test(test_section_name, " [sect.subsect.subsub.sub4]  # mycomment", true, "sect.subsect.subsub.sub4");
-    run_test(test_section_name, " [ my-sec.sub_1.sub_2. ];whatever", true, "my-sec.sub_1.sub_2.");
-    run_test(test_section_name, " .[ my-sec.sub_1.sub_2. ];whatever", false, NULL);
-    run_test(test_section_name, " [ .my-sec.sub_1- ] ###", true, ".my-sec.sub_1-");
+    run_test(test_section_name, "[  sect.subsect  ]", true, "sect.subsect");
+    run_test(test_section_name, " [  sect.subsect  ]", false, NULL);
+    run_test(test_section_name, "[sect.subsect.subsub.sub4]", true, "sect.subsect.subsub.sub4");
+    run_test(test_section_name, " [sect.subsect.subsub.sub4]  # mycomment", false, NULL);
+    run_test(test_section_name, "[ my-sec.sub_1.sub_2.      ]", true, "my-sec.sub_1.sub_2.");
+    run_test(test_section_name, ".[ my-sec.sub_1.sub_2. ];whatever", false, NULL);
+    run_test(test_section_name, "[ .my-sec.sub_1- ]", true, ".my-sec.sub_1-");
+    run_test(test_section_name, "[ .my-sec.sub_1- ] ", false, NULL);
     run_test(test_section_name, "[]", false, NULL);
     run_test(test_section_name, "[ ]", false, NULL);
     run_test(test_section_name, "[.]", true, ".");
     run_test(test_section_name, "[   _ ]", true, "_");
     run_test(test_section_name, "[ .   _ ]", false, NULL);
+
 
     printf("[ ] Parsing key=value lines ... \n");
     run_test(test_kv_line, " ;", false, NULL, NULL);
@@ -154,13 +165,19 @@ int main(int argc, char **argv){
     run_test(test_kv_line, "one=[two] ", false, NULL, NULL);
     run_test(test_kv_line, "one = { ", false, NULL, NULL);
     run_test(test_kv_line, "one=two=three", false, NULL, NULL);
-    run_test(test_kv_line, " key = val* ", true, "key", "val*");
-    run_test(test_kv_line, " k=v # ", true, "k", "v");
+    run_test(test_kv_line, " key = val*", false, NULL, NULL);
+    run_test(test_kv_line, "key = val*", true, "key", "val*");
+    run_test(test_kv_line, "key = val* ", true, "key", "val* ");
+    run_test(test_kv_line, " key = val* ", false, NULL, NULL);
+    run_test(test_kv_line, "key = a very long description @@ __ ", true, "key", "a very long description @@ __ ");
+    run_test(test_kv_line, "key = one two three_four five ", true, "key", "one two three_four five ");
+    run_test(test_kv_line, "k=v", true, "k", "v");
+    run_test(test_kv_line, " k=v # ", false, NULL, NULL);
     run_test(test_kv_line, "one=two", true, "one", "two");
-    run_test(test_kv_line, "mykey     =myval # mycomment, k=v", true, "mykey", "myval");
-    run_test(test_kv_line, " __key__ = ---val.val.val- ", true, "__key__", "---val.val.val-");
-    run_test(test_kv_line, "key1-=-2val ", true, "key1-", "-2val");
-#endif
+    run_test(test_kv_line, "mykey     =myval # mycomment, k=v", false, NULL, NULL);
+    run_test(test_kv_line, "mykey     =myval", true, "mykey", "myval");
+    run_test(test_kv_line, "__key__ = ---val.val.val-", true, "__key__", "---val.val.val-");
+    run_test(test_kv_line, "key1-=-2val", true, "key1-", "-2val");
 
     printf("[ ] Parsing list headers ... \n");
     run_test(test_list_header, " ", false, NULL);
@@ -168,54 +185,45 @@ int main(int argc, char **argv){
     run_test(test_list_header, " [ ]", false, NULL);
     run_test(test_list_header, "a=[] ", false, NULL);
     run_test(test_list_header, " my_list = [. ", false, NULL);
-    run_test(test_list_header, "mylist = [ ", true, "mylist");
+    run_test(test_list_header, "mylist = [ ", false, NULL);
+    run_test(test_list_header, "mylist = [", false, NULL);
     run_test(test_list_header, "=[", false, NULL);
     run_test(test_list_header, "#mylist=[", false, NULL);
     run_test(test_list_header, "mylist=[=", false, NULL);
-    run_test(test_list_header, "mylist=[", true, "mylist");
-    run_test(test_list_header, "mylist=[ ; some comment", true, "mylist");
-    run_test(test_list_header, "mylist=[#[[[", true, "mylist");
-    run_test(test_list_header, "mylist =[", true, "mylist");
-    run_test(test_list_header, "  mylist      =[  ", true, "mylist");
-    run_test(test_list_header, "mylist=  [ ", true, "mylist");
-    run_test(test_list_header, "my.list- = [", true, "my.list-");
-    run_test(test_list_header, "__ = [  ", true, "__");
+    run_test(test_list_header, "mylist=", true, "mylist");
+    run_test(test_list_header, "mylist =", true, "mylist");
+    run_test(test_list_header, "mylist        =", true, "mylist");
+    run_test(test_list_header, " mylist=", false, NULL);
+    run_test(test_list_header, "mylist =[", false, NULL);
+    run_test(test_list_header, "  mylist      =[  ", false, NULL);
+    run_test(test_list_header, "my.list-=", true, "my.list-");
+    run_test(test_list_header, "__ =", true, "__");
 
-    run_test(test_list_header, "mylist = [one  ", false, "__");
-    run_test(test_list_header, "   my.list=  [ one, two, three  ", false, NULL);
-    run_test(test_list_header, "   my.list=  [ one, two three,  ", false, NULL);
-    run_test(test_list_header, "   my.list=  [ one, two, three,,  ", false, NULL);
-    run_test(test_list_header, "   my.list=  [ one, two, three, ,  ", false, NULL);
-    run_test(test_list_header, "   my.list=  [ one, two, , three, # failed  ", false, NULL);
-    run_test(test_list_header, " my.list =[ one ., two, three  ", false, NULL);
-    run_test(test_list_header, " my.list =[ one, two, three  ", false, NULL);
-    run_test(test_list_header, " my.list =[ one, two, three  ]]", false, NULL);
-    run_test(test_list_header, " my.list =[ one, two, three  ] ]", false, NULL);
-    run_test(test_list_header, " my.list =[[ one, two, three  ]; ]", false, NULL);
-
-    run_test(test_list_header, "mylist = [one,  # yes", true, "mylist");
-    run_test(test_list_header, "mylist = [one, two  , three ,  ", true, "mylist");
-    run_test(test_list_header, " Multi=  [   one, two, three   ] ", true, "Multi");
-    run_test(test_list_header, "mylist = [one   ]  ", true, "mylist");
-    run_test(test_list_header, "mylist = [ one, two] ", true, "mylist");
-
-    printf("[ ] Parsing list closing lines ... \n");
+    printf("[ ] Parsing closing-bracket lines ... \n");
     run_test(test_list_end, " ", false);
     run_test(test_list_end, " # one", false);
     run_test(test_list_end, " # ]", false);
     run_test(test_list_end, ";]", false);
-    run_test(test_list_end, "a]", true);
-    run_test(test_list_end, "----]", true);
+    run_test(test_list_end, "a]", false);
+    run_test(test_list_end, "----]", false);
+    run_test(test_list_end, "   ]", false);
+    run_test(test_list_end, " ]      ", false);
+    run_test(test_list_end, "] ; some comment", false);
+    run_test(test_list_end, "  ] # comment", false);
     run_test(test_list_end, "]", true);
-    run_test(test_list_end, "   ]", true);
-    run_test(test_list_end, " ]      ", true);
-    run_test(test_list_end, "] ; some comment", true);
-    run_test(test_list_end, "  ] # comment", true);
-    run_test(test_list_end, "  one, ] # comment", false);
-    run_test(test_list_end, "  one ] ] # comment", false);
-    run_test(test_list_end, "  one]] # comment", false);
-    run_test(test_list_end, "  one, two, three  ] # comment", true);
-    run_test(test_list_end, "one , two  ,  three] # comment", true);
+
+    printf("[ ] Parsing opening-bracket lines ... \n");
+    run_test(test_list_start, " ", false);
+    run_test(test_list_start, " # one", false);
+    run_test(test_list_start, " #[ ", false);
+    run_test(test_list_start, "[;", false);
+    run_test(test_list_start, "[a", false);
+    run_test(test_list_start, "[----", false);
+    run_test(test_list_start, "[  ", false);
+    run_test(test_list_start, "    [", false);
+    run_test(test_list_start, "[ ; some comment", false);
+    run_test(test_list_start, "  [ # comment", false);
+    run_test(test_list_start, "[", true);
 
     printf("[ ] Parsing list item lines ... \n");
     run_test(test_list_entry, " ", false, false, NULL);
@@ -228,18 +236,11 @@ int main(int argc, char **argv){
     run_test(test_list_entry, " ,,", false, false, NULL);
     run_test(test_list_entry, ",some", false, false, NULL);
     run_test(test_list_entry, "item ,", true, false, "item");
-    run_test(test_list_entry, "a.b.@c.D---E.f__        ,;,,", true, false, "a.b.@c.D---E.f__");
+    run_test(test_list_entry, "item,", true, false, "item");
+    run_test(test_list_entry, "item", true, true, "item");
+    run_test(test_list_entry, " item", false, false, NULL);
     run_test(test_list_entry, "some", true, true, "some");
-    run_test(test_list_entry, "item ; ", true, true, "item");
-    run_test(test_list_entry, "    item.one.two_three#, ", true, true, "item.one.two_three");
-    run_test(test_list_entry, "item, ", true, false, "item");
-    run_test(test_list_entry, "--item_,; ", true, false, "--item_");
-    run_test(test_list_entry, "item___,    ", true, false, "item___");
-
-    run_test(test_list_entry, "item___,    ", true, false, "item___");
-    run_test(test_list_entry, "item , blah    ", true, false, "item");
-    run_test(test_list_entry, "item , blah,    ", true, false, "item");
-
+    run_test(test_list_entry, "item ;", false, false, NULL);
     printf("Passed: %u of %u\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
 }

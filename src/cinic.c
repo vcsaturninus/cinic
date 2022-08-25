@@ -54,18 +54,21 @@ const char *LIST_BRACKET = "[]";
  * index in the array. This makes it possible to catch
  * attempts to index out of bounds (see Cinic_err2str()). */
 static const char *cinic_error_strings[] = {
-    [CINIC_SUCCESS]         = "Success",
-    [CINIC_NOSECTION]       = "entry without section",
-    [CINIC_MALFORMED]       = "malformed/syntacticaly incorrect",
-    [CINIC_MALFORMED_LIST]  = "malformed/syntacticaly incorrect list",
-    [CINIC_TOOLONG]         = "line length exceeds maximum acceptable length(" tostring(MAX_LINE_LEN) ")",
-    [CINIC_NESTED]          = "illegal nesting (unterminated list?)",
-    [CINIC_NOLIST]          = "list item without list",
-    [CINIC_EMPTY_LIST]      = "malformed list (empty list?)",
-    [CINIC_MISSING_COMMA]   = "malformed list entry (previous missing comma?)",
-    [CINIC_REDUNDANT_COMMA] = "malformed list entry (redundant comma?)",
-    [CINIC_REDUNDANT_BRACE] = "malformed list (redundant brace?)",
-    [CINIC_SENTINEL]     =  NULL
+    [CINIC_SUCCESS]           = "Success",
+    [CINIC_NOSECTION]         = "entry without section",
+    [CINIC_MALFORMED]         = "malformed/syntacticaly incorrect",
+    [CINIC_MALFORMED_LIST]    = "malformed/syntacticaly incorrect list",
+    [CINIC_TOOLONG]           = "line length exceeds maximum acceptable length(" tostring(MAX_LINE_LEN) ")",
+    [CINIC_NESTED]            = "illegal nesting (unterminated list?)",
+    [CINIC_NOLIST]            = "list item without list",
+    [CINIC_EMPTY_LIST]        = "malformed list (empty list?)",
+    [CINIC_OUTSIDE_LIST]      = "list entry outside any list",
+    [CINIC_MISSING_COMMA]     = "malformed list entry (previous missing comma?)",
+    [CINIC_REDUNDANT_COMMA]   = "malformed list entry (redundant comma?)",
+    [CINIC_REDUNDANT_BRACKET] = "malformed list (redundant bracket ?)",
+    [CINIC_LIST_NOT_STARTED]  = "malformed list (missing opening bracket ?)",
+    [CINIC_LIST_NOT_ENDED]    = "malformed list (unterminated list ?)",
+    [CINIC_SENTINEL]          =  NULL
 };
 
 
@@ -77,6 +80,58 @@ const char *Cinic_err2str(enum cinic_error errnum){
     return cinic_error_strings[errnum];
 }
 
+enum cinic_error infer_list_error(enum cinic_list_state prev, enum cinic_list_state next){
+    say("trying to infer error based on prev=%i and next=%i\n", prev, next);
+    switch(prev){
+        
+        case NOLIST:
+            if (next == LIST_HEAD){
+                return CINIC_SUCCESS;
+            }else if (next == NOLIST){
+                return CINIC_REDUNDANT_BRACKET;
+            }else return CINIC_OUTSIDE_LIST;
+            break;
+        
+        case LIST_HEAD:
+            if (next == LIST_OPEN){
+                return CINIC_SUCCESS;
+            }else if (next == LIST_HEAD){
+                return CINIC_MALFORMED_LIST;
+            }else return CINIC_LIST_NOT_STARTED;
+            break;
+
+        case LIST_OPEN:
+            if (next == LIST_ONGOING || next == LIST_END){
+                return CINIC_SUCCESS;
+            }else if (next == LIST_HEAD){
+                return CINIC_NESTED;
+            }else if (next == LIST_OPEN){
+                return CINIC_REDUNDANT_BRACKET;
+            }else if (next == NOLIST && !ALLOW_EMPTY_LISTS){
+                return CINIC_EMPTY_LIST;
+            }else return CINIC_MALFORMED_LIST;
+            break;
+
+        case LIST_ONGOING:
+            if (next == LIST_ONGOING || next == LIST_END){
+                return CINIC_SUCCESS;
+            }else if (next == NOLIST){
+                return CINIC_REDUNDANT_COMMA;
+            }else return CINIC_LIST_NOT_ENDED;
+            break;
+
+        case LIST_END:
+            if (next == NOLIST){
+                return CINIC_SUCCESS;
+            }else if (next == LIST_HEAD){
+                return CINIC_NESTED;
+            }else if (next == LIST_OPEN){
+                return CINIC_MALFORMED_LIST;
+            }else return CINIC_MISSING_COMMA;
+            break;
+    }
+    return CINIC_SUCCESS;
+}
 
 void cinic_exit_print(enum cinic_error error, uint32_t ln){
     assert(error < CINIC_SENTINEL && error > CINIC_SUCCESS);
@@ -87,7 +142,7 @@ void cinic_exit_print(enum cinic_error error, uint32_t ln){
 
 /*
  * Strip leading whitespace from s */
-static inline char *strip_lws(char *s){
+char *strip_lws(char *s){
     assert(s);
     while (*s && isspace(*s)) ++s;
     return s;
@@ -95,7 +150,7 @@ static inline char *strip_lws(char *s){
 
 /*
  * Strip trailing whitespace from s */
-static inline char *strip_tws(char *s){
+char *strip_tws(char *s){
     assert(s);
     char *end = s+ (strlen(s) - 1); /* char before NUL */
     //printf("end = %c\n", *end);
@@ -117,7 +172,7 @@ static inline bool is_comment(unsigned char c){
 /*
  * Strip everything after (and including) the first comment
  * symbol found on the line */
-static inline void strip_comment(char *s){
+void strip_comment(char *s){
     assert(s);
     say(" ~ stripping comment from '%s'\n", s);
     while (*s && !is_comment(*s)) ++s;  /* find comment */
@@ -131,11 +186,11 @@ static inline void strip_comment(char *s){
  * An acceptable char is one that can appear in a section title,
  * i.e it is part of the regex charset [a-zA-Z0-9-_.@] 
  *
- * If key is true, the set of allowed characters is more restricted
- * compared to the set of allowed characters for values. For example,
- * whitespace IS allowed in values such that they can be strings.
+ * If ws_allowed is true, then a whitespace character is considered
+ * legal. This is useful for example when the value is meant to be
+ * a string such as a description of something.
  */
-static inline bool is_allowed(unsigned char c){
+static inline bool is_allowed(unsigned char c, bool ws_allowed){
     if (c == '.' ||
         c == '-' ||
         c == '_' ||
@@ -145,7 +200,8 @@ static inline bool is_allowed(unsigned char c){
         c == '?' ||
         c == '%' ||
         c == '&' ||
-        isalnum(c)
+        isalnum(c) ||
+		(ws_allowed && isspace(c))
        )
     {
         return true;
@@ -218,16 +274,20 @@ uint32_t read_line(FILE *f, char **buff, size_t *buffsz){
     return rc;
 }
 
+/*
+ * Copy src to dst (as much of src as fits in buffsz) and
+ * NUL-terminate either at null_at (if null_at is smaller
+ * than buffsz) or otherwize at buffsz-1.
+ */
 static void cp_to_buff(char dst[], char *src, size_t buffsz, size_t null_at){
     assert(dst && src);
     memset(dst, 0, buffsz);
     strncpy(dst, src, buffsz-1);
-    if (buffsz < null_at){
-        dst[buffsz-1] = '\0';
-    }else{
+    if (null_at < buffsz){
         dst[null_at] = '\0';
+    }else{
+        dst[buffsz-1] = '\0';
     }
-    printf("null_at=%zu\n", null_at);
     printf("--->dst='%s'\n",dst);
 }
 
@@ -246,28 +306,23 @@ static void cp_to_buff(char dst[], char *src, size_t buffsz, size_t null_at){
  */
 bool is_section(char *line, char name[], size_t buffsz){
     assert(line);
-    char *end=NULL, *sectname=NULL;
+    char *end=NULL, *start=NULL;
     say(" ~~ parsing '%s'\n", line);
-
-    /* strip leading and trailing whitespace and comment */
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
 
     /* first non-whitespace char must be '[' */
     if (! *line || *line++ != '[') return false;
 
     /* section NAME (text between [ ]) must be in the allowable set */
     line = strip_lws(line);  /* ws between opening bracket and title is allowed */
-    if (! *line || !is_allowed(*line)){
+    if (! *line || !is_allowed(*line, false)){
         return false;
     }else{
-        sectname = line; /* start of section name */
+        start = line; /* start of section name */
     }
 
     /*  go to end of section name; first char after section name must be
      *  either whitespace or the closing bracket */
-    while (*line && is_allowed(*line)) ++line;
+    while (*line && is_allowed(*line, false)) ++line;
     if (! *line || ( !isspace(*line) && *line != ']' ) ){
         return false;
     }else{
@@ -283,7 +338,7 @@ bool is_section(char *line, char name[], size_t buffsz){
 
     /* is name != NULL, user wants to mangle the string and extract section name */
     if (name){
-        cp_to_buff(name, sectname, buffsz, end-sectname);
+        cp_to_buff(name, start, buffsz, end-start);
     }
     return true;
 }
@@ -306,17 +361,12 @@ bool is_record_line(char *line, char k[], char v[], size_t buffsz){
     char *key=NULL, *val=NULL;
     char *key_end=NULL, *val_end=NULL;
 
-    /* strip leading and trailing ws and any comment */
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
-
     /* first char must be from the allowable set */
-    if (! *line || !is_allowed(*line)) return false;
+    if (! *line || !is_allowed(*line, false)) return false;
     key = line;  /* start of key */
 
     /* go to the end of the key */
-    while (*line && is_allowed(*line)) ++line;
+    while (*line && is_allowed(*line, false)) ++line;
     if (! *line) return false;
     key_end = line;
 
@@ -324,15 +374,13 @@ bool is_record_line(char *line, char k[], char v[], size_t buffsz){
     line = strip_lws(line);
     if (! *line || *line++ != '=') return false;
     line = strip_lws(line);
-    if (! *line || !is_allowed(*line)) return false;
+    if (! *line || !is_allowed(*line, false)) return false;
     val = line; /* start of value */
 
     /* go to the end of value */
-    while (*line && is_allowed(*line)) ++line;
-    if (*line && !isspace(*line) && !is_comment(*line)) return false;
-    val_end = line;
-
+    while (*line && is_allowed(*line, true)) ++line;
     if (*line) return false;
+    val_end = line;
 
     /* user wants key or/and val extracted and wants the string mangled for that */
     if (k){
@@ -351,7 +399,9 @@ bool has_list_components(char *line){
     line = strip_lws(line);
     strip_comment(line);
     strip_tws(line);
-	
+
+    // todo remove
+    return true;
 	uint32_t equals_count = char_occurs('=', line, false);
 	uint32_t op_bracket_count = char_occurs(LIST_BRACKET[0], line, false);
 	uint32_t cl_bracket_count = char_occurs(LIST_BRACKET[1], line, false);
@@ -365,22 +415,6 @@ bool has_list_components(char *line){
 	return true;
 }
 
-bool is_one_line_list(char *line, char buff[], size_t buffsz){
-    assert(line);
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
-    
-    /* starts with legal char, contains equals sign, opening bracket, and ends with closing bracket */
-    if (is_allowed(*line) &&
-        strchr(line, '=') &&
-        strchr(line, '[') &&
-        line[strlen(line)-1] == LIST_BRACKET[1])
-    { return true; }
-
-    return false;
-}
-
 char *get_list_token(char *line, char buff[], size_t buffsz){
     assert(line);
     line = strip_lws(line);
@@ -390,16 +424,18 @@ char *get_list_token(char *line, char buff[], size_t buffsz){
     char *start = line;
     char *end = NULL;
     char *next = NULL;
-    char *term = NULL;
-    
+
+	/* empty list */
+	if (!*line) return NULL;
+
+	// think [blah] 
     say(" ~ parsing '%s'\n", line);
-    while (*line && is_allowed(*line)) ++line;
+    while (*line && is_allowed(*line, false)) ++line;
     line = strip_lws(line);
     printf("line here = '%s'\n", line);
-
+	
     /* assume list head */
     if (*line == '='){
-        line = strip_lws(line);
         end = line; 
         printf("end = '%s'\n", end);
         printf("start = %p, end = %p, end-start = %li\n", start, end, end-start);
@@ -418,31 +454,29 @@ char *get_list_token(char *line, char buff[], size_t buffsz){
         end = line; 
         cp_to_buff(buff, start, buffsz, (end - start) + 1);
     }
-
+    /* normal token but without comma */
+    else if(is_allowed(*line, false)){
+        end = line - 1;
+        cp_to_buff(buff, start, buffsz, (end - start) + 1);
+    }
     /* assume list end */
     else if(*line == LIST_BRACKET[1]){
-        /* last item + closing bracket */ 
-        if (is_allowed(*start)){
+        if (is_allowed(*start, false)){
             end = line-1;
-            cp_to_buff(buff, start, buffsz, (end - start) + 1);
-        }
-        /* only bracket alone */
-        else{
-            end = line;
-            cp_to_buff(buff, start, buffsz, (end - start) + 1);
-        }
+        }else end = line;
+        cp_to_buff(buff, start, buffsz, (end - start) + 1);
     }
     else{
-        puts("else");
-        //end = start + strlen(start);
-        end = line-1;
+        puts("else ~~~");
+        end = start + strlen(start) - 1; /* does not include NUL */
+        //end = line-1;
         cp_to_buff(buff, start, buffsz, (end - start) + 1);
     }
 
-    if (! *end /* opening bracket */ || ! *(end+1)){
+    if (! *end ){
         next = NULL;
     }else{
-        next = end+1;
+        next = end+1;  /* might be empty string with just NUL; handled at the start */
     }
     
     printf("next will be '%s'\n", next);
@@ -465,17 +499,12 @@ bool is_list_head(char *line, char k[], size_t buffsz){
     char *key_start=NULL, *key_end=NULL;
     say(" ~~ parsing '%s'\n", line);
 
-    /* strip leading and trailing ws and any comment */
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
-
     /* first char must be in the allowable set */
-    if (! *line || !is_allowed(*line)) return false;
+    if (! *line || !is_allowed(*line, false)) return false;
     key_start = line;  /* start of key */
 
     /* go to the end of the key */
-    while (*line && is_allowed(*line)) ++line;
+    while (*line && is_allowed(*line, false)) ++line;
     if (! *line) return false;
     key_end = line; /* end of key */
 
@@ -505,34 +534,22 @@ bool is_list_end(char *line){
     assert(line);
     say(" ~~ parsing '%s'\n", line);
 
-    /* strip leading and trailing ws and any comment */
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
-
-    /* first char must be closing brace */
-    if (! *line || (*line++ != LIST_BRACKET[1])) return false;
-
-    /* line should be ending here */
-    if (*line) return false;
+    /* only char must be closing brace */
+	if (strlen(line) != 1 || *line != LIST_BRACKET[1]){
+		return false;
+	}
 
     return true;
 }
 
-bool is_list_open(char *line){
+bool is_list_start(char *line){
     assert(line);
     say(" ~~ parsing '%s'\n", line);
 
-    /* strip leading and trailing ws and any comment */
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
-
-    /* first char must be opening brace */
-    if (! *line || (*line++ != *LIST_BRACKET)) return false;
-
-    /* line should be ending here */
-    if (*line) return false;
+    /* only char must be opening brace */
+	if (strlen(line) != 1 || *line != *LIST_BRACKET){
+		return false;
+	}
 
     return true;
 }
@@ -563,28 +580,22 @@ bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast){
     bool last_in_list = false;
     say(" ~~ parsing '%s'\n", line);
 
-    /* strip leading and trailing ws and any comment */
-    line = strip_lws(line);
-    strip_comment(line);
-    strip_tws(line);
-
-    /* ensure the comma only appears ONCE in uncommented text */
-    if (char_occurs(',', line, false) > 1) return false;
-
-    say(" ~~ parsing '%s'\n", line);
     /* first char must be from the allowable set */
-    if (! *line || !is_allowed(*line)) return false;
+    if (! *line || !is_allowed(*line, false)) return false;
     val_start = line;
 
     /* go to the end of value */
-    while (*line && is_allowed(*line)) ++line;
+    while (*line && is_allowed(*line, false)) ++line;
     val_end = line;
 
     /* strip any whitespace */
     line = strip_lws(line);
 
-    /* char here must be either NUL, a comma, or a comment symbol */
-    if (! *line || is_comment(*line)){
+    /* char here must be either NUL or a comma */
+	if (*line && *line != ','){
+		return false;
+	}
+    else if (! *line){
         last_in_list = true;
     }else if (*line == ','){
         last_in_list = false;
@@ -592,7 +603,7 @@ bool is_list_entry(char *line, char v[], size_t buffsz, bool *islast){
     }
 
     /* line should be ending here */
-    if (*line) return false;
+	assert(! *line);
 
     /* user wants value extracted and line mangled to that end */
     if (v){
@@ -628,7 +639,8 @@ int Cinic_parse(const char *path, config_cb cb){
     uint32_t bytes_read = 0;
 
     /* allocated and resized by `getline()` as needed */
-    char *buff = NULL;
+    char *buff__ = NULL;
+    char *buff = buff__;
     size_t buffsz = 0;
 
     FILE *f = fopen(path, "r");
@@ -638,22 +650,25 @@ int Cinic_parse(const char *path, config_cb cb){
     }
     
     /* for each line read from config file */ 
-    while ( ( bytes_read = read_line(f, &buff, &buffsz)) ){
-        ++ln;
+    while ( ( bytes_read = read_line(f, &buff__, &buffsz)) ){
+        ++ln; 
+        buff = buff__;
         say(" ~ read line %u: '%s'", ln, buff);
         /* line too long */
         if(bytes_read > MAX_LINE_LEN){
             cinic_exit_print(CINIC_TOOLONG, ln);
         }
 
-        /* empty line or comment-only line */
-		else if (is_empty_line(buff) || is_comment_line(buff)){
-            /* just continue */
-            say(" ~ line %u is an empty or comment-only line\n", ln);
-		}
+        if (is_empty_line(buff) || is_comment_line(buff) ){
+            continue;
+        }
+
+		buff = strip_lws(buff);
+		strip_comment(buff);
+		strip_tws(buff);
 
         /* section title line */
-        else if(is_section(buff, section, MAX_LINE_LEN)){
+        if(is_section(buff, section, MAX_LINE_LEN)){
             say(" ~ line %u is a section title\n", ln);
             if (list){
                 cinic_exit_print(CINIC_NESTED, ln);
@@ -671,11 +686,12 @@ int Cinic_parse(const char *path, config_cb cb){
 			if ( (rc = cb(ln, list, section, key, val)) ) return rc;
         }
 
-        /* else, check if list */
-		else if (has_list_components(buff)){
+        /* else, try list */
+		else {
             say(" ~ line %u has list components\n", ln);
 			char curr_token_buff[MAX_LINE_LEN] = {0};
 			char *token = buff;
+            enum cinic_error cerr;
 
 			/* todo: add more states to the list enum: detect redundant opening brackets */
 			while ((token = get_list_token(token, curr_token_buff, MAX_LINE_LEN))){
@@ -683,8 +699,8 @@ int Cinic_parse(const char *path, config_cb cb){
                 
                 /* list head */
 				if(is_list_head(curr_token_buff, key, MAX_LINE_LEN)){
-                    if (list != NOLIST){
-						cinic_exit_print(CINIC_NESTED, ln);
+                    if ( (cerr = infer_list_error(list, LIST_HEAD)) ){
+						cinic_exit_print(cerr, ln);
                     }
 					list = LIST_HEAD;
 					islast = false;
@@ -692,9 +708,9 @@ int Cinic_parse(const char *path, config_cb cb){
 				}
 
                 /* opening bracket */
-                else if (is_list_open(curr_token_buff)){
-                    if (list != LIST_HEAD){
-						cinic_exit_print(CINIC_MALFORMED_LIST, ln);
+                else if (is_list_start(curr_token_buff)){
+                    if ( (cerr = infer_list_error(list, LIST_OPEN)) ){
+						cinic_exit_print(cerr, ln);
                     }
                     list = LIST_OPEN;
                     continue;
@@ -702,37 +718,23 @@ int Cinic_parse(const char *path, config_cb cb){
 
                 /* list entry */
 				else if(is_list_entry(curr_token_buff, val, MAX_LINE_LEN, &islast)){
-					if (!list){
-						cinic_exit_print(CINIC_NOLIST, ln);
-					}else if(list == LIST_END){
-						cinic_exit_print(CINIC_MISSING_COMMA, ln);
-					}
-
-					if (islast){
-						list = LIST_END ; /* reset :  */
-					}else{
-						list = LIST_ONGOING;  /* regular entry in list */
-					}
+                    if ( (cerr = infer_list_error(list, islast ? LIST_END : LIST_ONGOING)) ){
+						cinic_exit_print(cerr, ln);
+                    }
+					list = islast ? LIST_END : LIST_ONGOING; /* reset :  */
 				}
 
                 /* list end */
 				else if(is_list_end(curr_token_buff)){
-					if (list == LIST_ONGOING){
-						cinic_exit_print(CINIC_REDUNDANT_COMMA, ln);
-					}
-					else if(list == NOLIST){
-						cinic_exit_print(CINIC_REDUNDANT_BRACE, ln);
-					}
-					else if(list == LIST_HEAD && !ALLOW_EMPTY_LISTS){
-						cinic_exit_print(CINIC_EMPTY_LIST, ln);
-					}
-					else if(list == LIST_END){
-						list = NOLIST;
-					}
+                    if ( (cerr = infer_list_error(list, NOLIST)) ){
+						cinic_exit_print(cerr, ln);
+                    }
+					list = NOLIST;
 					continue;
 				}
 
                 /* not a list component/token recognized as valid */
+                /* not any kind of line recognized as valid */
 				else{
 					cinic_exit_print(CINIC_MALFORMED, ln);
 				}
@@ -740,15 +742,10 @@ int Cinic_parse(const char *path, config_cb cb){
 				if ( (rc = cb(ln, list, section, key, val)) ) return rc;
 			}
 		}
-
-        /* not any kind of line recognized as valid */
-        else{
-            cinic_exit_print(CINIC_MALFORMED, ln);
-        }
     }
 
     fclose(f);  /* fopen resources */
-    free(buff); /* getline buffer */
+    free(buff__); /* we need to maintain the getline buffer pointer for the call to free */
     return 0;   /* success */
 }
 
