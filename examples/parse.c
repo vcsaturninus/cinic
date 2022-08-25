@@ -9,14 +9,15 @@
  * gcc -I../src/ ../src/cinic.c parse.c  -o q */
 
 int mycb(uint32_t ln, enum cinic_list_state list, const char *section, const char *k, const char *v){
-    fprintf(stdout, "[%u]: [%s], %s=%s, list=%d\n", ln, section, k, v, list);
+    fprintf(stdout, "called [%u]: [%s], %s=%s, list=%d\n", ln, section, k, v, list);
     return 0;
 }
 
 int main(int argc, char **argv){
     Cinic_init(false, false, ".");
-    //Cinic_parse("/home/vcsaturninus/common/repos/others/cinic/tests/what.ini", mycb);
+    Cinic_parse("/home/vcsaturninus/common/repos/others/cinic/samples/single_line_list.ini", mycb);
 
+#if 0
     //char test[] = "mylist = [1,2,3,4]";
     char test[] = "mylist = [ one, two , three   , four  ] ";
     char buff[1024] = {0};
@@ -37,4 +38,5 @@ int main(int argc, char **argv){
     if (is_list_end(buff)){
         puts("it is end");
     }
+#endif
 }

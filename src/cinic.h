@@ -24,15 +24,16 @@
  * *not* know whether an error is caused by any subsequent line.
  *
  * To deal with lists, state such as the below must be maintained: the head
- * of a list sets LIST_START, all susequent items BUT THE LAST set
- * LIST_ONGOING, and the last item sets LIST_END. Finally, the closing brace
- * resets back to NOLIST.
+ * of a list sets LIST_HEAD, the opening bracket sets LIST_OPEN, all susequent 
+ * items BUT THE LAST set LIST_ONGOING, and the last item sets LIST_END. 
+ * Finally, the closing brace resets back to NOLIST.
  */
 enum cinic_list_state{
-    LIST_START   = 3,   /* current line/entry is the first in (starts) a list */
+    LIST_HEAD    = 5,   /* current line/entry is the head (key) of a list */
+    LIST_OPEN    = 4,   /* current line/entry is an opening bracket for a list */
     LIST_ONGOING = 2,   /* current line/entry is a regular entry in a list */
-    LIST_END     = 1,   /* current line/entry is the last in (ends) a list */
-    NOLIST       = 0    /* current line/entry is *not* part of a list */
+    LIST_END     = 1,   /* current line/entry is the last item in (ends) a list */
+    NOLIST       = 0    /* current line/entry is a closing bracket for a list */
 };
 
 /* Cinic error numbers;
@@ -41,6 +42,7 @@ enum cinic_error{
 	CINIC_SUCCESS = 0,
 	CINIC_NOSECTION,
 	CINIC_MALFORMED,
+	CINIC_MALFORMED_LIST,
 	CINIC_TOOLONG,
     CINIC_NESTED,
     CINIC_NOLIST,

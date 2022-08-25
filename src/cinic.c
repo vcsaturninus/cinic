@@ -57,6 +57,7 @@ static const char *cinic_error_strings[] = {
     [CINIC_SUCCESS]         = "Success",
     [CINIC_NOSECTION]       = "entry without section",
     [CINIC_MALFORMED]       = "malformed/syntacticaly incorrect",
+    [CINIC_MALFORMED_LIST]  = "malformed/syntacticaly incorrect list",
     [CINIC_TOOLONG]         = "line length exceeds maximum acceptable length(" tostring(MAX_LINE_LEN) ")",
     [CINIC_NESTED]          = "illegal nesting (unterminated list?)",
     [CINIC_NOLIST]          = "list item without list",
@@ -128,7 +129,12 @@ static inline void strip_comment(char *s){
  * Return true if c is a valid/acceptable/allowed char, else false.
  *
  * An acceptable char is one that can appear in a section title,
- * i.e it is part of the regex charset [a-zA-Z0-9-_.@] */
+ * i.e it is part of the regex charset [a-zA-Z0-9-_.@] 
+ *
+ * If key is true, the set of allowed characters is more restricted
+ * compared to the set of allowed characters for values. For example,
+ * whitespace IS allowed in values such that they can be strings.
+ */
 static inline bool is_allowed(unsigned char c){
     if (c == '.' ||
         c == '-' ||
@@ -140,7 +146,7 @@ static inline bool is_allowed(unsigned char c){
         c == '%' ||
         c == '&' ||
         isalnum(c)
-        )
+       )
     {
         return true;
     }
@@ -339,6 +345,26 @@ bool is_record_line(char *line, char k[], char v[], size_t buffsz){
     return true;
 }
 
+
+bool has_list_components(char *line){
+	assert(line);
+    line = strip_lws(line);
+    strip_comment(line);
+    strip_tws(line);
+	
+	uint32_t equals_count = char_occurs('=', line, false);
+	uint32_t op_bracket_count = char_occurs(LIST_BRACKET[0], line, false);
+	uint32_t cl_bracket_count = char_occurs(LIST_BRACKET[1], line, false);
+	uint32_t comma_count = char_occurs(',', line, false);
+	
+	/* if none occur, 100% not a list */
+	if (!equals_count && !op_bracket_count && !cl_bracket_count && !comma_count){
+		return false;
+	}
+	
+	return true;
+}
+
 bool is_one_line_list(char *line, char buff[], size_t buffsz){
     assert(line);
     line = strip_lws(line);
@@ -364,6 +390,7 @@ char *get_list_token(char *line, char buff[], size_t buffsz){
     char *start = line;
     char *end = NULL;
     char *next = NULL;
+    char *term = NULL;
     
     say(" ~ parsing '%s'\n", line);
     while (*line && is_allowed(*line)) ++line;
@@ -372,20 +399,26 @@ char *get_list_token(char *line, char buff[], size_t buffsz){
 
     /* assume list head */
     if (*line == '='){
-        ++line; /* get expected opening bracket */
         line = strip_lws(line);
-        printf("line here = '%s'\n", line);
         end = line; 
         printf("end = '%s'\n", end);
         printf("start = %p, end = %p, end-start = %li\n", start, end, end-start);
         cp_to_buff(buff, start, buffsz, (end-start) + 1);
     }
+    
+    else if (*line == *LIST_BRACKET){
+        end = line;
+        cp_to_buff(buff, start, buffsz, (end - start) + 1);
+    }
 
-    /* assume comma separator for list items */
+    /* assume comma separator for regular list items; 'last' items
+     * are only delimited by (optional) space */
     else if(*line == ','){
+        printf("spaceeeee\n");
         end = line; 
         cp_to_buff(buff, start, buffsz, (end - start) + 1);
     }
+
     /* assume list end */
     else if(*line == LIST_BRACKET[1]){
         /* last item + closing bracket */ 
@@ -401,7 +434,8 @@ char *get_list_token(char *line, char buff[], size_t buffsz){
     }
     else{
         puts("else");
-        end = start + strlen(start);
+        //end = start + strlen(start);
+        end = line-1;
         cp_to_buff(buff, start, buffsz, (end - start) + 1);
     }
 
@@ -445,11 +479,9 @@ bool is_list_head(char *line, char k[], size_t buffsz){
     if (! *line) return false;
     key_end = line; /* end of key */
 
-    /* intervening whitespace between key, =, and value is allowed */
+    /* intervening whitespace between key and = is allowed */
     line = strip_lws(line);
     if (! *line || *line++ != '=') return false;
-    line = strip_lws(line);
-    if (! *line || *line++ != *LIST_BRACKET) return false;
 
     /* line should be ending here */
     if (*line) return false;
@@ -480,6 +512,24 @@ bool is_list_end(char *line){
 
     /* first char must be closing brace */
     if (! *line || (*line++ != LIST_BRACKET[1])) return false;
+
+    /* line should be ending here */
+    if (*line) return false;
+
+    return true;
+}
+
+bool is_list_open(char *line){
+    assert(line);
+    say(" ~~ parsing '%s'\n", line);
+
+    /* strip leading and trailing ws and any comment */
+    line = strip_lws(line);
+    strip_comment(line);
+    strip_tws(line);
+
+    /* first char must be opening brace */
+    if (! *line || (*line++ != *LIST_BRACKET)) return false;
 
     /* line should be ending here */
     if (*line) return false;
@@ -586,67 +636,115 @@ int Cinic_parse(const char *path, config_cb cb){
         fprintf(stderr, "Failed to open file:'%s'\n", path);
         exit(EXIT_FAILURE);
     }
-
+    
+    /* for each line read from config file */ 
     while ( ( bytes_read = read_line(f, &buff, &buffsz)) ){
         ++ln;
-
+        say(" ~ read line %u: '%s'", ln, buff);
+        /* line too long */
         if(bytes_read > MAX_LINE_LEN){
             cinic_exit_print(CINIC_TOOLONG, ln);
         }
-        else if (is_empty_line(buff) || is_comment_line(buff)){
-            continue;
-        }
+
+        /* empty line or comment-only line */
+		else if (is_empty_line(buff) || is_comment_line(buff)){
+            /* just continue */
+            say(" ~ line %u is an empty or comment-only line\n", ln);
+		}
+
+        /* section title line */
         else if(is_section(buff, section, MAX_LINE_LEN)){
+            say(" ~ line %u is a section title\n", ln);
             if (list){
                 cinic_exit_print(CINIC_NESTED, ln);
             }
-            continue;
         }
+        
+        /*  key-value line */
         else if (is_record_line(buff, key, val, MAX_LINE_LEN)){
+            say(" ~ line %u is a record line\n", ln);
             if (! *section && !ALLOW_GLOBAL_RECORDS){
                 cinic_exit_print(CINIC_NOSECTION, ln);
             }else if (list){
                 cinic_exit_print(CINIC_NESTED, ln);
             }
+			if ( (rc = cb(ln, list, section, key, val)) ) return rc;
         }
-        else if(is_list_head(buff, key, MAX_LINE_LEN)){
-            list = LIST_START;
-            islast = false;
-            continue;
-        }
-        else if(is_list_entry(buff, val, MAX_LINE_LEN, &islast)){
-            if (!list){
-                cinic_exit_print(CINIC_NOLIST, ln);
-            }else if(list == LIST_END){
-                cinic_exit_print(CINIC_MISSING_COMMA, ln);
-            }
 
-            if (islast){
-                list = LIST_END ; /* reset :  */
-            }else{
-                list = LIST_ONGOING;  /* regular entry in list */
-            }
-        }
-        else if(is_list_end(buff)){
-            if (list == LIST_ONGOING){
-                cinic_exit_print(CINIC_REDUNDANT_COMMA, ln);
-            }
-            else if(list == NOLIST){
-                cinic_exit_print(CINIC_REDUNDANT_BRACE, ln);
-            }
-            else if(list == LIST_START && !ALLOW_EMPTY_LISTS){
-                cinic_exit_print(CINIC_EMPTY_LIST, ln);
-            }
-            else if(list == LIST_END){
-                list = NOLIST;
-            }
-            continue;
-        }
+        /* else, check if list */
+		else if (has_list_components(buff)){
+            say(" ~ line %u has list components\n", ln);
+			char curr_token_buff[MAX_LINE_LEN] = {0};
+			char *token = buff;
+
+			/* todo: add more states to the list enum: detect redundant opening brackets */
+			while ((token = get_list_token(token, curr_token_buff, MAX_LINE_LEN))){
+                printf("---> current token = '%s'\n", curr_token_buff);
+                
+                /* list head */
+				if(is_list_head(curr_token_buff, key, MAX_LINE_LEN)){
+                    if (list != NOLIST){
+						cinic_exit_print(CINIC_NESTED, ln);
+                    }
+					list = LIST_HEAD;
+					islast = false;
+					continue;
+				}
+
+                /* opening bracket */
+                else if (is_list_open(curr_token_buff)){
+                    if (list != LIST_HEAD){
+						cinic_exit_print(CINIC_MALFORMED_LIST, ln);
+                    }
+                    list = LIST_OPEN;
+                    continue;
+                }
+
+                /* list entry */
+				else if(is_list_entry(curr_token_buff, val, MAX_LINE_LEN, &islast)){
+					if (!list){
+						cinic_exit_print(CINIC_NOLIST, ln);
+					}else if(list == LIST_END){
+						cinic_exit_print(CINIC_MISSING_COMMA, ln);
+					}
+
+					if (islast){
+						list = LIST_END ; /* reset :  */
+					}else{
+						list = LIST_ONGOING;  /* regular entry in list */
+					}
+				}
+
+                /* list end */
+				else if(is_list_end(curr_token_buff)){
+					if (list == LIST_ONGOING){
+						cinic_exit_print(CINIC_REDUNDANT_COMMA, ln);
+					}
+					else if(list == NOLIST){
+						cinic_exit_print(CINIC_REDUNDANT_BRACE, ln);
+					}
+					else if(list == LIST_HEAD && !ALLOW_EMPTY_LISTS){
+						cinic_exit_print(CINIC_EMPTY_LIST, ln);
+					}
+					else if(list == LIST_END){
+						list = NOLIST;
+					}
+					continue;
+				}
+
+                /* not a list component/token recognized as valid */
+				else{
+					cinic_exit_print(CINIC_MALFORMED, ln);
+				}
+
+				if ( (rc = cb(ln, list, section, key, val)) ) return rc;
+			}
+		}
+
+        /* not any kind of line recognized as valid */
         else{
             cinic_exit_print(CINIC_MALFORMED, ln);
         }
-        rc = cb(ln, list, section, key, val);
-        if (rc) return rc;
     }
 
     fclose(f);  /* fopen resources */
