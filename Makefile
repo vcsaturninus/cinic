@@ -1,11 +1,22 @@
 # globals
 LUA_VERSION:=lua5.3
+CINIC_MAJOR:=1
+CINIC_MINOR:=1
 
 # artifacts
 OUT_DIR:=out
 VALGRIND_OUT:=valgrind.txt
-CLIB_OUT:=libcinic.so
-LUALIB_OUT:=cinic.so
+
+CLIB_BASENAME:=libcinic.so
+CLIB_SONAME:=$(CLIB_BASENAME).$(CINIC_MAJOR)
+CLIB_REALNAME:=$(CLIB_SONAME).$(CINIC_MINOR)
+CLIB_OUT:=$(CLIB_REALNAME)
+
+LUALIB_BASENAME:=cinic.so
+LUALIB_SONAME:=$(LUALIB_BASENAME).$(CINIC_MAJOR)
+LUALIB_REALNAME:=$(LUALIB_SONAME).$(CINIC_MINOR)
+LUALIB_OUT:=$(LUALIB_REALNAME)
+
 CTESTS_BIN:=ctests
 EXAMPLE_BIN:=example
 
@@ -23,8 +34,8 @@ ifdef DEBUG_MODE
 CFLAGS += -g
 CPPFLAGS += -DDEBUG_MODE
 endif
-CLIB_CFLAGS:= $(CFLAGS) -shared -fPIC
-LUALIB_CFLAGS:= $(CFLAGS) -shared -fPIC
+CLIB_CFLAGS:= $(CFLAGS) -shared -fPIC -Wl,-soname,$(CLIB_SONAME)
+LUALIB_CFLAGS:= $(CFLAGS) -shared -fPIC -Wl,-soname,$(LUALIB_SONAME)
 
 # LDFLAGS
 LD_LIBRARY_PATH:=$(OUT_DIR)/:$$LD_LIBRARY_PATH
@@ -62,6 +73,8 @@ all: clib lualib
 clib: $(addprefix $(OUT_DIR)/, $(notdir $(CLIB_SRC:.c=.o)))
 	@echo "\n[ ] Building $(CLIB_OUT) ..."
 	$(CC) $(CLIB_CFLAGS) $(CPPFLAGS) $^ -o $(OUT_DIR)/$(CLIB_OUT)
+	ln -sf $(CLIB_OUT) $(OUT_DIR)/$(CLIB_BASENAME)
+	ln -sf $(CLIB_OUT) $(OUT_DIR)/$(CLIB_SONAME)
 
 # cinic Lua C library module
 lualib: clib build_lualib
@@ -69,6 +82,8 @@ lualib: clib build_lualib
 build_lualib: $(addprefix $(OUT_DIR)/, $(notdir $(LUALIB_SRC:.c=.o)))
 	@echo "\n[ ] Building $(LUALIB_OUT)"
 	$(CC) $(LUALIB_CFLAGS) $(CPPFLAGS) $^ $(LUALIB_LDFLAGS) -o $(OUT_DIR)/$(LUALIB_OUT)
+	ln -sf $(LUALIB_OUT) $(OUT_DIR)/$(LUALIB_BASENAME)
+	ln -sf $(LUALIB_OUT) $(OUT_DIR)/$(LUALIB_SONAME)
 
 tests: ctests luatests
 
