@@ -7,17 +7,20 @@ VALGRIND_OUT:=valgrind.txt
 CLIB_OUT:=libcinic.so
 LUALIB_OUT:=cinic.so
 CTESTS_BIN:=ctests
+EXAMPLE_BIN:=example
 
 # sources
 CLIB_SRC:=$(wildcard src/*.c)
 LUALIB_SRC:= $(wildcard lua/*.c)   # C code for lua compiled lib module
 CTEST_SRC:=$(wildcard tests/*.c)
+EXAMPLE_SRC:=$(wildcard examples/*.c)
 LUATEST_SRC:=tests/tests.lua       # single entrypoint for lua tests
 
 # CFLAGS
 CFLAGS += -Wall -Wpedantic -std=c99 -Werror -O3
 ifdef DEBUG_MODE
 CFLAGS += -g
+CPPFLAGS += -DEBUG_MODE
 endif
 CLIB_CFLAGS:= $(CFLAGS) -shared -fPIC
 LUALIB_CFLAGS:= $(CFLAGS) -shared -fPIC
@@ -47,6 +50,8 @@ $(OUT_DIR)/%.o: lua/%.c
 $(OUT_DIR)/%.o: tests/%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -c -o $@ $<
 
+$(OUT_DIR)/%.o: examples/%.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -c -o $@ $<
 
 .PHONY: all clean tests clib lualib build_lualib build_ctests ctests luatests grind
 
@@ -77,6 +82,14 @@ build_ctests: $(addprefix $(OUT_DIR)/, $(notdir $(CTEST_SRC:.c=.o)))
 # lua tests script
 luatests: lualib
 	@LD_LIBRARY_PATH=$(LD_LIBRARY_PATH) ./tests/tests.lua
+
+# statically-linked example
+example: clean build_example
+
+build_example: $(addprefix $(OUT_DIR)/, $(notdir $(EXAMPLE_SRC:.c=.o))) \
+               $(addprefix $(OUT_DIR)/, $(notdir $(CLIB_SRC:.c=.o)))
+	@echo "\n[ ] Building $(EXAMPLE_BIN)"
+	$(CC) $(CFLAGS) $(CPPFLAGS) $^ -o $(OUT_DIR)/$(EXAMPLE_BIN)
 
 clean:
 	@echo "\n[ ] Cleaning up ..."

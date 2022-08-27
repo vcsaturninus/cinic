@@ -4,8 +4,6 @@
 package.cpath = package.cpath .. ";../out/?.so;./out/?.so;"
 
 local cinic = require("cinic")
-local motab = require("motab")
-
 
 local tests_run    = 0
 local tests_passed = 0
@@ -194,20 +192,17 @@ end
 local function run(expected, file, allow_globals, sep)
     assert(expected and file)
     local sep = sep and sep or '.'
+    local globals = allow_globals or false
     local file = "./samples/" .. file
-    local actual = cinic.parse(file, allow_globals, sep)
-    print("actual is " .. motab.ptable(actual, 2))
+    local actual = cinic.parse(file, globals, sep)
 
     tests_run = tests_run+1
     local passed = deep_compare(expected, actual)
     if passed then
         tests_passed = tests_passed + 1
-        print(string.format(" ~ Test %s passed", tests_run))
+        print(string.format(" ~ Test %s passed  -- %s", tests_run, file))
     else
-        print(string.format(" ~ Test %s FAILED !! ", tests_run))
-        print(motab.ptable(expected, 3, "expected"))
-        print(motab.ptable(actual, 3, "actual"))
-        print("here")
+        print(string.format(" ~ Test %s FAILED !!  -- %s", tests_run, file))
     end
 end
 

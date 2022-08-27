@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "cinic.h"
 #include "utils__.h"
@@ -36,7 +37,7 @@ bool test_section_name(char *str, bool expected, char *expected_name){
     s[strlen(str)] = '\0';
 
     char ret_name[MAX_LINE_LEN] = {0};
-    if (is_section(s, ret_name, MAX_LINE_LEN) != expected) return false;
+    if (is_section_line(s, ret_name, MAX_LINE_LEN) != expected) return false;
     if (expected){
         //printf(" --> '%s'\n", ret_name);
         return matches(ret_name, expected_name);
