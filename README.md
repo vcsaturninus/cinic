@@ -264,4 +264,3 @@ look much cleaner.
 ## Todo
 [ ] add soname-versioning
 [ ] add C++ bindings
-[ ] add DEBUG_MODE argument to Makefile

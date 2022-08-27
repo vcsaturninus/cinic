@@ -20,7 +20,7 @@ LUATEST_SRC:=tests/tests.lua       # single entrypoint for lua tests
 CFLAGS += -Wall -Wpedantic -std=c99 -Werror -O3
 ifdef DEBUG_MODE
 CFLAGS += -g
-CPPFLAGS += -DEBUG_MODE
+CPPFLAGS += -DDEBUG_MODE
 endif
 CLIB_CFLAGS:= $(CFLAGS) -shared -fPIC
 LUALIB_CFLAGS:= $(CFLAGS) -shared -fPIC
