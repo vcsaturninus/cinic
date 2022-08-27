@@ -29,7 +29,6 @@ The C library gets built as a dynamic library programs can link against.
 
 Using the parser is as simple as:
 ```C
-└─$ cat parse.c
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -97,7 +96,7 @@ local inifile = "myinifile"
 local parsed = cinic.parse(inifile)
 ```
 The result returned to lua is more convenient and 'batteries-included'
-compared to C. The parser returns a table that contains key and values and
+compared to C. The parser returns a table that contains keys and values and
 potentially nested tables and/or arrays. The result is always a table
 (possibly empty) and never nil. Parsing errors are considered
 deal-breakers and an error is thrown, so parsing either succeeds or
@@ -167,25 +166,30 @@ An error is similarly thrown in Lua on parsing failure.
 ### `.ini` syntax
 
 The parser understands an `.ini` config file that has:
- * global records: key-value pairs that precede any section title.
+ * **global records**: key-value pairs that precede any section title.
    This is illegal by default but can be made allowable via the init
    function. For the syntax, see `key-value pairs` below.
 
- * section titles of the form `[mysection]`. The section title itself
+ * **section titles** of the form `[mysection]`. The section title itself
    must be a contiguous string of characters but otherwise whitespace
    can appear in arbitrary amounts anywhere else on the line.
 
- * key-value pairs ('records') of the form `mykey=mypair`. The key
+ * **key-value pairs** ('records') of the form `mykey=mypair`. The key
    must - like the section title - be a contiguous string of
    characters with no intervening whitespace. Whitespace can otherwise
    appear in arbitrary amounts anywhere else on the line. The value
    itself can have whitespace in it.
 
- * comments: everything following a `;` or `#` is considered a
+   In `C`, the callback registered by the user gets called with
+   the section title, as well as key and value. If global entries are
+   allowed and found in the config file being parsed, the section
+   title argument to the callback will be an empty string (`\0`).
+
+ * **comments**: everything following a `;` or `#` is considered a
    comment. Comments can appear anywhere but must come _last_ on the
    line.
 
- * lists. These consist of a key followed by an `=` sign. The key must
+ * **lists**. These consist of a key followed by an `=` sign. The key must
    be a contiguous string as described above. The key and the equals sign
    must appear on the same line but can be whitespace separated. The
    list of items per se is the value associated with the key. The list
