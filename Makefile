@@ -10,6 +10,7 @@ CTESTS_BIN:=ctests
 EXAMPLE_BIN:=example
 
 # sources
+HEADERS:=$(wildcard src/*.h)
 CLIB_SRC:=$(wildcard src/*.c)
 LUALIB_SRC:= $(wildcard lua/*.c)   # C code for lua compiled lib module
 CTEST_SRC:=$(wildcard tests/*.c)
@@ -41,16 +42,16 @@ CPPFLAGS += -D_POSIX_C_SOURCE=200809L   # getline()
 ###########
 
 # implicit rules
-$(OUT_DIR)/%.o: src/%.c
+$(OUT_DIR)/%.o: src/%.c $(HEADERS)
 	$(CC) $(CLIB_CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-$(OUT_DIR)/%.o: lua/%.c
+$(OUT_DIR)/%.o: lua/%.c $(HEADERS)
 	$(CC) $(LUALIB_CFLAGS) $(LUALIB_LDFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-$(OUT_DIR)/%.o: tests/%.c
+$(OUT_DIR)/%.o: tests/%.c $(HEADERS)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -c -o $@ $<
 
-$(OUT_DIR)/%.o: examples/%.c
+$(OUT_DIR)/%.o: examples/%.c $(HEADERS)
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -c -o $@ $<
 
 .PHONY: all clean tests clib lualib build_lualib build_ctests ctests luatests grind
