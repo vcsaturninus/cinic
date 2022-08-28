@@ -262,5 +262,4 @@ used in a test (see `tests/tests.lua`). Average files are expected to
 look much cleaner.
 
 ## Todo
-[ ] add soname-versioning
-[ ] add C++ bindings
+ - add C++ bindings

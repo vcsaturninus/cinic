@@ -71,19 +71,21 @@ all: clib lualib
 
 # cinic C library
 clib: $(addprefix $(OUT_DIR)/, $(notdir $(CLIB_SRC:.c=.o)))
-	@echo "\n[ ] Building $(CLIB_OUT) ..."
+	@echo "[ ] Building $(CLIB_OUT) ..."
 	$(CC) $(CLIB_CFLAGS) $(CPPFLAGS) $^ -o $(OUT_DIR)/$(CLIB_OUT)
 	ln -sf $(CLIB_OUT) $(OUT_DIR)/$(CLIB_BASENAME)
 	ln -sf $(CLIB_OUT) $(OUT_DIR)/$(CLIB_SONAME)
+	@echo ""
 
 # cinic Lua C library module
 lualib: clib build_lualib
 
 build_lualib: $(addprefix $(OUT_DIR)/, $(notdir $(LUALIB_SRC:.c=.o)))
-	@echo "\n[ ] Building $(LUALIB_OUT)"
+	@echo "[ ] Building $(LUALIB_OUT)"
 	$(CC) $(LUALIB_CFLAGS) $(CPPFLAGS) $^ $(LUALIB_LDFLAGS) -o $(OUT_DIR)/$(LUALIB_OUT)
 	ln -sf $(LUALIB_OUT) $(OUT_DIR)/$(LUALIB_BASENAME)
 	ln -sf $(LUALIB_OUT) $(OUT_DIR)/$(LUALIB_SONAME)
+	@echo ""
 
 tests: ctests luatests
 
