@@ -67,7 +67,10 @@ $(OUT_DIR)/%.o: examples/%.c $(HEADERS)
 
 .PHONY: all clean tests clib lualib build_lualib build_ctests ctests luatests grind
 
-all: clib lualib
+all: dirs clib lualib
+
+dirs:
+	@mkdir -p out
 
 # cinic C library
 clib: $(addprefix $(OUT_DIR)/, $(notdir $(CLIB_SRC:.c=.o)))
