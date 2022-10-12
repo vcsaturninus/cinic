@@ -40,8 +40,8 @@ LUALIB_CFLAGS:= $(CFLAGS) -shared -fPIC -Wl,-soname,$(LUALIB_SONAME)
 # LDFLAGS
 LD_LIBRARY_PATH:=$(OUT_DIR)/:$$LD_LIBRARY_PATH
 LDFLAGS=-L$(realpath $(OUT_DIR))
-LUALIB_LDFLAGS:=-l$(LUA_VERSION) -lcinic $(LDFLAGS)
-CTEST_LDFLAGS:=-lcinic $(LDFLAGS)
+LUALIB_LDFLAGS=-l$(LUA_VERSION) -lcinic $(LDFLAGS)
+CTEST_LDFLAGS=-lcinic $(LDFLAGS)
 
 # augment header file search path with src/ and lua/ dirs
 CPPFLAGS += -Isrc -Ilua
