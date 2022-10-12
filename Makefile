@@ -39,7 +39,7 @@ LUALIB_CFLAGS:= $(CFLAGS) -shared -fPIC -Wl,-soname,$(LUALIB_SONAME)
 
 # LDFLAGS
 LD_LIBRARY_PATH:=$(OUT_DIR)/:$$LD_LIBRARY_PATH
-LDFLAGS:=-L$(realpath $(OUT_DIR))
+LDFLAGS=-L$(realpath $(OUT_DIR))
 LUALIB_LDFLAGS:=-l$(LUA_VERSION) -lcinic $(LDFLAGS)
 CTEST_LDFLAGS:=-lcinic $(LDFLAGS)
 
@@ -54,16 +54,16 @@ CPPFLAGS += -D_POSIX_C_SOURCE=200809L   # getline()
 
 # implicit rules
 $(OUT_DIR)/%.o: src/%.c $(HEADERS)
-	$(CC) $(CLIB_CFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(CLIB_CFLAGS) $(CPPFLAGS) -o $@ -c $<
 
 $(OUT_DIR)/%.o: lua/%.c $(HEADERS)
-	$(CC) $(LUALIB_CFLAGS) $(LUALIB_LDFLAGS) $(CPPFLAGS) -c -o $@ $<
+	$(CC) $(LUALIB_CFLAGS) $(LUALIB_LDFLAGS) $(CPPFLAGS) -o $@ -c $<
 
 $(OUT_DIR)/%.o: tests/%.c $(HEADERS)
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -o $@ -c $<
 
 $(OUT_DIR)/%.o: examples/%.c $(HEADERS)
-	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(TEST_LDFLAGS) -o $@ -c $<
 
 .PHONY: all dirs clean tests clib lualib build_lualib build_ctests ctests luatests grind
 
